@@ -1,0 +1,9 @@
+/classifiedMNIST/*
+/__pycache__/*
+/data/*
+/experiments/*
+/trained_classifiers/*
+/trained_models/*
+
+*.gif
+*.png
