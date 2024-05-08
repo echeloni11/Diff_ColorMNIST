@@ -4,6 +4,9 @@
 /experiments/*
 /trained_classifiers/*
 /trained_models/*
+/classifier_to_download/*
+/classifiedMNIST_not_eval/*
+/experiment_status/*
 
 *.gif
 *.png

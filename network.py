@@ -522,7 +522,7 @@ class DDPM(nn.Module):
         # We should predict the "error term" from this x_t. Loss is what we return.
 
         # dropout context with some probability
-        context_mask = torch.bernoulli(torch.zeros_like(c)+self.drop_prob).to(self.device)
+        context_mask = torch.bernoulli(torch.zeros(c.shape[0])+self.drop_prob).to(self.device)
         if self.independent_mask:
             hue_mask = torch.bernoulli(torch.zeros_like(hue)+self.drop_prob).to(self.device) if self.color else None
         else:

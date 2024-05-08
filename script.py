@@ -14,8 +14,8 @@ This technique also features in ImageGen 'Photorealistic Text-to-Image Diffusion
 https://arxiv.org/abs/2205.11487
 
 '''
-
 import os
+import argparse
 from typing import Dict, Tuple
 from tqdm import tqdm
 import torch
@@ -33,31 +33,43 @@ from matplotlib.colors import hsv_to_rgb
 from network import DDPM, ContextUnet, ContextUnetColored
 from dataset import add_hue_confounded, classifiedMNIST
 
-date = "240507_2"
-rank = 7
+def main():
+    parser = argparse.ArgumentParser(description='Train a model on MNIST with configurable parameters.')
+    parser.add_argument('--date', type=str, help='Date for saving experiments')
+    parser.add_argument('--rank', type=int, default=0)
+    parser.add_argument('--p_unif', type=float, default=None, help='Used in generating training data, NOT in classified data')
+    parser.add_argument('--cond_mode', type=str, choices=['Attention', 'AdaCat', 'AdaGN'], default='Attention', help='Conditioning mode')
+    parser.add_argument('--classifier_name', type=str, choices=[None,'0','0.01','0.05','0.1','1'], default=None, help='Classifier name for classified dataset')
+    parser.add_argument('--class_type', type=str, choices=['label', 'logit'], default='label', help='Type of class encoding')
+    args = parser.parse_args()
 
-def train_mnist():
+    train_mnist(args)
+
+def train_mnist(args):
 
     # hardcoding these here
     n_epoch = 30
     batch_size = 256
     n_T = 400 # 500
-    device = f"cuda:{rank}" if torch.cuda.is_available() else "cpu"
+    device = f"cuda:{args.rank}" if torch.cuda.is_available() else "cpu"
     n_classes = 10
-    n_feat = 48 # 128 ok, 256 better (but slower)
+    n_feat = 256 # 128 ok, 256 better (but slower)
     drop_prob = 0.5
-    p_unif = 0.01
+    p_unif = args.p_unif
     lrate = 1e-4
     save_model = True
     save_gif = False
-    save_dir = f'./experiments/{date}/'
+    save_dir = f'./experiments/{args.date}/'
     mnist_color = True                  # use color mnist
     model_color = True                  # use color model
     independent_mask = True             # sample hue and context mask independently or same
-    cond_mode = "Attention"             # "AdaCat" or "AdaGN"
-    classifier_name = "model0.01_10"    # if not None, use classified dataset
-    condition_mode = "label"            # "label" or "logits" (logits only used for classified data)
+    cond_mode = args.cond_mode            # "AdaCat" or "AdaGN"
+    classifier_name = args.classifier_name    # if not None, use classified dataset
+    class_type = args.class_type           # "label" or "logits" (logits only used for classified data)
     ws_test = [0.0, 1.0]                # strength of generative guidance
+
+    assert p_unif is not None or classifier_name is not None, \
+        "at least one of p_unif and classifier_name should be set to indicate"
 
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(save_dir + "image", exist_ok=True)
@@ -97,7 +109,10 @@ def train_mnist():
         loss_ema = None
         for val in pbar:
             if classifier_name is not None:
-                x, c_true, c, logits, hues = torch.load(f'./classifiedMNIST/{classifier_name}/batch_{val}.pth')
+                x, c_true, hues = torch.load(f'./classifiedMNIST/real_data/batch_{val}.pth', map_location=device)
+                c_preds, logits = torch.load(f'./classifiedMNIST/predicted_label/batch_{val}.pth', map_location=device)
+                c = c_preds[classifier_name]
+                logit = logits[classifier_name]
             else:
                 x, c = val
                 hues = None
@@ -108,7 +123,10 @@ def train_mnist():
             x = x.to(device)    # batch, 1, 28, 28
             c = c.to(device)    # batch
             hues = hues.to(device) if hues is not None else None
-            loss = ddpm(x, c, hues)
+            if class_type == "label":
+                loss = ddpm(x, c, hues)
+            elif class_type == "logit":
+                loss = ddpm(x, logit, hues)
             loss.backward()
             if loss_ema is None:
                 loss_ema = loss.item()
@@ -164,5 +182,5 @@ def train_mnist():
             print('saved model at ' + save_dir + f"model/model_{ep}.pth")
 
 if __name__ == "__main__":
-    train_mnist()
+    main()
 
