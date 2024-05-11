@@ -126,23 +126,26 @@ def train_mnist(args):
                     x, hues = add_hue_confounded(x, c, p_unif)
 
             optim_g.zero_grad()
-            optim_other.zero_grad()
             x = x.to(device)    # batch, 1, 28, 28
             c = c.to(device)    # batch
             hues = hues.to(device) if hues is not None else None
 
             hidden_vec = ddpm.nn_model.encode(x)
             hue_pred_g = hue_reg_g(hidden_vec, c)
-            loss_g = F.mse_loss(hue_pred_g, hues)
+            loss_g = F.mse_loss(hue_pred_g.view(-1), hues.view(-1))
             loss_g.backward()
             optim_g.step()
-
+            
+            optim_other.zero_grad()
             if class_type == "label":
                 loss_ddpm = ddpm(x, c, hues)
             elif class_type == "logit":
                 loss_ddpm = ddpm(x, logit, hues)
+            hidden_vec = ddpm.nn_model.encode(x)
             hue_pred_h = hue_reg_h(hidden_vec, torch.zeros_like(c, device=device))
-            loss_h = F.mse_loss(hue_pred_h, hues)
+            hue_pred_g = hue_reg_g(hidden_vec, c)
+            loss_h = F.mse_loss(hue_pred_h.view(-1), hues.view(-1))
+            loss_g = F.mse_loss(hue_pred_g.view(-1), hues.view(-1))
             loss = loss_ddpm + 1.0 * (loss_h - loss_g)
             loss.backward()
             if loss_ema is None:

@@ -818,14 +818,19 @@ class DDPM(nn.Module):
 class HueRegressor(nn.Module):
     def __init__(self, n_classes=10, n_feat=256):
         super(HueRegressor, self).__init__()
-        self.yemb = EmbedFC(n_classes, n_feat)
-        self.fc1 = nn.Linear(2*n_feat, 2*n_feat)
+        self.n_feat = n_feat
+        self.n_classes=n_classes
+        self.yemb = EmbedFC(n_classes, 2*n_feat)
+        self.fc1 = nn.Linear(4*n_feat, 2*n_feat)
         self.fc2 = nn.Linear(2*n_feat, n_feat)
         self.fc3 = nn.Linear(n_feat, 1)
 
     def forward(self, x, y):
-        yemb = self.yemb(y).view(-1, 2*n_feat, 1, 1)
-        x = torch.cat((x, yemb), 1)
+        if y.dim() == 1:
+            y = nn.functional.one_hot(y, num_classes=self.n_classes).type(torch.float)
+
+        yemb = self.yemb(y).view(-1, 2*self.n_feat, 1, 1)
+        x = torch.cat((x, yemb), 1).view(x.shape[0], -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
