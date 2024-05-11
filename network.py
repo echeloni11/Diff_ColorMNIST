@@ -660,7 +660,7 @@ class DDPM(nn.Module):
         # for i in range(self.n_T, 0, -1):
         for i in range(0, self.n_T):
             # print(f'sampling timestep {i}',end='\r')
-            print(f'abducting timestep {i}',end='\r')
+            # print(f'abducting timestep {i}',end='\r')
             t_is = torch.tensor([i / self.n_T]).to(device)
             t_is = t_is.repeat(n_sample,1,1,1)
 
@@ -712,7 +712,7 @@ class DDPM(nn.Module):
         hues_i = hues.repeat(2) if self.color else None
 
         for i in range(self.n_T, 0, -1):
-            print(f'reconstructing timestep {i}',end='\r')
+            # print(f'reconstructing timestep {i}',end='\r')
             t_is = torch.tensor([i / self.n_T]).to(device)
             t_is = t_is.repeat(n_sample,1,1,1)
 

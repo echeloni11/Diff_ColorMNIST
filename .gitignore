@@ -7,6 +7,8 @@
 /classifier_to_download/*
 /classifiedMNIST_not_eval/*
 /experiment_status/*
+/flip_results/*
+
 
 *.gif
 *.png
