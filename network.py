@@ -460,6 +460,80 @@ class ContextUnetColored(ContextUnet):
         out = self.out(torch.cat((up3, x), 1))
         return out
 
+    def encode(self, x, t=None):
+        x = self.init_conv(x)
+        down1 = self.down1(x)
+        down2 = self.down2(down1)
+        hiddenvec = self.to_vec(down2)
+        return hiddenvec
+
+    def decode(self, x, hiddenvec, c, hue, t, context_mask, hue_mask):
+                # x is (noisy) image, c is context label, t is timestep, 
+        # context_mask says which samples to block the context on
+        # hue is the color to add to the image [0,1]
+                # convert context to one hot embedding
+        # [256] -> [256,10]
+        if c.dim() == 1:
+            c = nn.functional.one_hot(c, num_classes=self.n_classes).type(torch.float)
+
+        # mask out context if context_mask == 1
+        context_mask = context_mask[:, None]
+        # q: what is context_mask[:, None]? 
+        # a: it is a broadcasting operation, it adds a new dimension to the tensor
+        # q: so the new shape is [256,1]?
+        # a: yes, and it is broadcasted to [256,10] when multiplied with c
+        context_mask = context_mask.repeat(1,self.n_classes)
+        # debug
+        # context_mask = (-1*(1-context_mask)) # need to flip 0 <-> 1
+        context_mask = 1-context_mask
+        c = c * context_mask
+        # now c is [256,10] and some batches are masked to 0
+        # a whole batch is masked, so it is also correctly masked after embed
+
+        # # mask out hue if hue_mask == 1 and fill the hue with 2
+        # hue = hue * (1-hue_mask) + 2*hue_mask
+        
+        # embed context, time step
+        cemb1 = self.contextembed1(c).view(-1, self.n_feat * 2, 1, 1)
+        temb1 = self.timeembed1(t).view(-1, self.n_feat * 2, 1, 1)
+        cemb2 = self.contextembed2(c).view(-1, self.n_feat, 1, 1)
+        temb2 = self.timeembed2(t).view(-1, self.n_feat, 1, 1)
+        hemb1 = self.hueembed1(hue).view(-1, self.n_feat * 2, 1, 1)
+        hemb2 = self.hueembed2(hue).view(-1, self.n_feat, 1, 1)
+
+        # mask out hemb if hue_mask == 1 and fill with huenullembed
+        for i in range(hue_mask.shape[0]):
+            if hue_mask[i]:
+                hemb1[i] = self.huenullembed1
+                hemb2[i] = self.huenullembed2
+
+        if self.cond_mode == "Attention":
+            mixemb1 = self.mixembed1(torch.cat((cemb1, hemb1), 1))
+            mixemb2 = self.mixembed2(torch.cat((cemb2, hemb2), 1))
+            up1 = self.up0(hiddenvec)
+            up2 = self.up1(up1, down2, temb1, mixemb1)
+            up3 = self.up2(up2, down1, temb2, mixemb2)
+        else:
+            # debug
+            # print(f'c {c.shape} hue_mask {hue_mask.shape}, hue {hue.shape}')
+            # print(f'cemb1 {cemb1.shape} temb1 {temb1.shape} hemb1 {hemb1.shape}')
+            if self.cond_mode == "AdaGN":
+                mixemb1 = self.mixembed1(torch.cat((cemb1, hemb1), 1)).view(-1, self.n_feat * 2, 1, 1)
+                mixemb2 = self.mixembed2(torch.cat((cemb2, hemb2), 1)).view(-1, self.n_feat * 1, 1, 1)
+
+                # could concatenate the context embedding here instead of adaGN
+                # hiddenvec = torch.cat((hiddenvec, temb1, cemb1), 1)
+
+                up1 = self.up0(hiddenvec)
+                # up2 = self.up1(up1, down2) # if want to avoid add and multiply embeddings
+
+                up2 = self.up1(mixemb1*up1+ temb1, down2)  # add and multiply embeddings
+                up3 = self.up2(mixemb2*up2+ temb2, down1)
+                
+        out = self.out(torch.cat((up3, x), 1))
+        return out
+
+
 
 def ddpm_schedules(beta1, beta2, T):
     """
@@ -741,7 +815,21 @@ class DDPM(nn.Module):
 
         return x_i
 
+class HueRegressor(nn.Module):
+    def __init__(self, n_classes=10, n_feat=256):
+        super(HueRegressor, self).__init__()
+        self.yemb = EmbedFC(n_classes, n_feat)
+        self.fc1 = nn.Linear(2*n_feat, 2*n_feat)
+        self.fc2 = nn.Linear(2*n_feat, n_feat)
+        self.fc3 = nn.Linear(n_feat, 1)
 
+    def forward(self, x, y):
+        yemb = self.yemb(y).view(-1, 2*n_feat, 1, 1)
+        x = torch.cat((x, yemb), 1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
 class Classifier(nn.Module):
     # simple CNN for classificaiton
