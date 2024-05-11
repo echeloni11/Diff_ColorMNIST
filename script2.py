@@ -41,6 +41,7 @@ def main():
     parser.add_argument('--cond_mode', type=str, choices=['Attention', 'AdaCat', 'AdaGN'], default='Attention', help='Conditioning mode')
     parser.add_argument('--classifier_name', type=str, choices=[None,'0','0.01','0.05','0.1','1'], default=None, help='Classifier name for classified dataset')
     parser.add_argument('--class_type', type=str, choices=['label', 'logit'], default='label', help='Type of class encoding')
+    parser.add_argument('--lmda', type=float, help='strength of CIL')
     args = parser.parse_args()
 
     train_mnist(args)
@@ -67,6 +68,7 @@ def train_mnist(args):
     classifier_name = args.classifier_name    # if not None, use classified dataset
     class_type = args.class_type           # "label" or "logits" (logits only used for classified data)
     ws_test = [0.0, 1.0]                # strength of generative guidance
+    lmda = args.lmda                    # strength of CIL
 
     assert p_unif is not None or classifier_name is not None, \
         "at least one of p_unif and classifier_name should be set to indicate"
@@ -107,7 +109,8 @@ def train_mnist(args):
         ddpm.train()
 
         # linear lrate decay
-        # optim.param_groups[0]['lr'] = lrate*(1-ep/n_epoch)
+        optim_g.param_groups[0]['lr'] = lrate*(3-ep/n_epoch)/3
+        optim_other.param_groups[0]['lr'] = lrate*(3-ep/n_epoch)/3
         if classifier_name is not None:
             pbar = tqdm(range(60000//batch_size))
         else:
@@ -146,7 +149,7 @@ def train_mnist(args):
             hue_pred_g = hue_reg_g(hidden_vec, c)
             loss_h = F.mse_loss(hue_pred_h.view(-1), hues.view(-1))
             loss_g = F.mse_loss(hue_pred_g.view(-1), hues.view(-1))
-            loss = loss_ddpm + 1.0 * (loss_h - loss_g)
+            loss = loss_ddpm + lmda * (loss_h - loss_g)
             loss.backward()
             if loss_ema is None:
                 loss_ema = loss.item()

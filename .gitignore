@@ -9,6 +9,8 @@
 /experiment_status/*
 /flip_results/*
 
+/diff_to_download/*
+
 
 *.gif
 *.png
