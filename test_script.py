@@ -94,16 +94,16 @@ def test(args):
     total_num_per_class_clean = torch.zeros(10, device=device)   # total_num_per_class[i] is the number of class i
     total_num_per_class_noisy = torch.zeros(10, device=device)
     # Metric 1: Accuracy
-    correct_num_per_class_clean = []  # correct_num_per_class[i][j] is the number of class j do(hue=i) and remain class j
+    correct_num_per_class_clean = []  # correct_num_per_class[i][j] is the number of class i do(hue=j) and remain class i
     for i in range(10):
         correct_num_per_class_clean.append(torch.zeros(10, device=device))
-    correct_num_per_class_noisy = []  # correct_num_per_class[i][j] is the number of class j do(hue=i) and remain class j
+    correct_num_per_class_noisy = []  # correct_num_per_class[i][j] is the number of class i do(hue=j) and remain class i
     for i in range(10):
         correct_num_per_class_noisy.append(torch.zeros(10, device=device))
     
     # Metric 2: Decrease of original class logit
-    # logit_decrease[i][j] is the decrease of logit of every sample of class j do(hue=i)
-    # append the decrease of logit of every sample of class j do(hue=i) and calculate mean std at the end
+    # logit_decrease[i][j] is the decrease of logit of every sample of class i do(hue=j)
+    # append the decrease of logit of every sample of class i do(hue=j) and calculate mean std at the end
     logit_decrease_clean = []
     for i in range(10):
         logit_decrease_clean.append([[] for _ in range(10)])
@@ -112,8 +112,8 @@ def test(args):
         logit_decrease_noisy.append([[] for _ in range(10)])
 
     # Metric 3: Increase of second largest logit
-    # logit_increase[i][j] is the increase of second largest logit of every sample of class j do(hue=i)
-    # append the increase of second largest logit of every sample of class j do(hue=i) and calculate mean std at the end
+    # logit_increase[i][j] is the increase of second largest logit of every sample of class i do(hue=j)
+    # append the increase of second largest logit of every sample of class i do(hue=j) and calculate mean std at the end
     logit_increase_clean = []
     for i in range(10):
         logit_increase_clean.append([[] for _ in range(10)])
@@ -171,41 +171,82 @@ def test(args):
                 correct_cf_i_noisy = c_pred_cf_i_noisy == c
                 for l in range(len(c)):
                     if correct_cf_i_clean[l] and not error_clean[l]:
-                        correct_num_per_class_clean[i][c[l]] += 1
+                        correct_num_per_class_clean[c[l]][i] += 1
                     if correct_cf_i_noisy[l] and not error_noisy[l]:
-                        correct_num_per_class_noisy[i][c[l]] += 1
+                        correct_num_per_class_noisy[c[l]][i] += 1
                 
                 # Metric 2: Decrease of original class logit
                 for l in range(len(c)):
                     if not error_clean[l]:
-                        logit_decrease_clean[i][c[l]].append((torch.exp(logit_clean[l][c[l]]) - torch.exp(logit_cf_i_clean[l][c[l]])).item())
+                        logit_decrease_clean[c[l]][i].append((torch.exp(logit_clean[l][c[l]]) - torch.exp(logit_cf_i_clean[l][c[l]])).item())
                     if not error_noisy[l]:
-                        logit_decrease_noisy[i][c[l]].append((torch.exp(logit_noisy[l][c[l]]) - torch.exp(logit_cf_i_noisy[l][c[l]])).item())
+                        logit_decrease_noisy[c[l]][i].append((torch.exp(logit_noisy[l][c[l]]) - torch.exp(logit_cf_i_noisy[l][c[l]])).item())
 
                 # Metric 3: Increase of second largest logit
                 for l in range(len(c)):
                     if not error_clean[l]:
                         second_largest_index_clean = torch.argsort(logit_cf_i_clean[l], descending=True)[1] \
                             if c[l] == torch.argmax(logit_cf_i_clean[l]) else torch.argmax(logit_cf_i_clean[l])
-                        logit_increase_clean[i][c[l]].append((torch.exp(logit_cf_i_clean[l][second_largest_index_clean]) - torch.exp(logit_clean[l][second_largest_index_clean])).item())
+                        logit_increase_clean[c[l]][i].append((torch.exp(logit_cf_i_clean[l][second_largest_index_clean]) - torch.exp(logit_clean[l][second_largest_index_clean])).item())
                     if not error_noisy[l]:
                         second_largest_index_noisy = torch.argsort(logit_cf_i_noisy[l], descending=True)[1] \
                             if c[l] == torch.argmax(logit_cf_i_noisy[l]) else torch.argmax(logit_cf_i_noisy[l])
-                        logit_increase_noisy[i][c[l]].append((torch.exp(logit_cf_i_noisy[l][second_largest_index_noisy]) - torch.exp(logit_noisy[l][second_largest_index_noisy])).item())
+                        logit_increase_noisy[c[l]][i].append((torch.exp(logit_cf_i_noisy[l][second_largest_index_noisy]) - torch.exp(logit_noisy[l][second_largest_index_noisy])).item())
             
+            # compute current result
+            clean_acc = sum([torch.sum(correct_num_per_class_clean[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_clean).item()
+            noisy_acc = sum([torch.sum(correct_num_per_class_noisy[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_noisy).item()
+            print(f"Batch {k}: Clean Accuracy: {clean_acc}, Noisy Accuracy: {noisy_acc}")
+            clean_ori_decrease = [sum([sum(logit_decrease_clean[i][j]) for j in range(10)]) / len(logit_decrease_clean[i][j]) if len(logit_decrease_clean[i][j]) != 0 else 0 for i in range(10)]
+            noisy_ori_decrease = [sum([sum(logit_decrease_noisy[i][j]) for j in range(10)]) / len(logit_decrease_noisy[i][j]) if len(logit_decrease_noisy[i][j]) != 0 else 0 for i in range(10)]
+            print(f"Batch {k}: Clean Decrease of original class logit: {clean_ori_decrease}")
+            print(f"Batch {k}: Noisy Decrease of original class logit: {noisy_ori_decrease}")
+            clean_sec_increase = [sum([sum(logit_increase_clean[i][j]) for j in range(10)]) / len(logit_increase_clean[i][j]) if len(logit_increase_clean[i][j]) != 0 else 0 for i in range(10)]
+            noisy_sec_increase = [sum([sum(logit_increase_noisy[i][j]) for j in range(10)]) / len(logit_increase_noisy[i][j]) if len(logit_increase_noisy[i][j]) != 0 else 0 for i in range(10)]
+            print(f"Batch {k}: Clean Increase of second largest logit: {clean_sec_increase}")
+            print(f"Batch {k}: Noisy Increase of second largest logit: {noisy_sec_increase}")
+
             # log current batch information
-
-            current_correct_clean = [torch.sum(correct_num_per_class_clean[i])/torch.sum(total_num_per_class_clean[i]) for i in range(10)]
-            current_correct_noisy = [torch.sum(correct_num_per_class_noisy[i])/torch.sum(total_num_per_class_noisy[i]) for i in range(10)]
-
             with open(f"{save_dir}log/log_result.txt", "a") as f:
-                f.write(f"total_num_per_class: {total_num_per_class}\n")
-                f.write(f"correct_num_per_class: {correct_num_per_class}\n")
-                f.write(f"logit_decrease_clean: {logit_decrease_clean}\n")
-                f.write(f"logit_decrease_noisy: {logit_decrease_noisy}\n")
-                f.write(f"logit_increase_clean: {logit_increase_clean}\n")
-                f.write(f"logit_increase_noisy: {logit_increase_noisy}\n")
-                f.write(f"\n")
+                # Metric 1: Accuracy
+                f.write("Clean Accuracy\n")
+                f.write(f"origin            total_num               Accuracy\n")
+                for i in range(10):
+                    f.write(f"{i}                 {total_num_per_class_clean[i]} ({total_num_per_class[i]})\
+                                     {correct_num_per_class_clean[i] / total_num_per_class[i]}\n")
+                f.write("\n")
+                f.write("Noisy Accuracy\n")
+                f.write(f"origin            total_num               Accuracy\n")
+                for i in range(10):
+                    f.write(f"{i}                 {total_num_per_class_noisy[i]} ({total_num_per_class[i]})\
+                                     {correct_num_per_class_noisy[i] / total_num_per_class[i]}\n")
+                f.write("\n")
+
+                # Metric 2: Decrease of original class logit
+                f.write("Clean Decrease of original class logit\n")
+                f.write(f"target    0   1   2   3   4   5   6   7   8   9\n")
+                f.write(f"origin\n")
+                for i in range(10):
+                    f.write(f"{i}        ")
+                    for j in range(10):
+                        if len(logit_decrease_clean[i][j]) == 0:
+                            f.write(f"0   ")
+                        else:
+                            f.write(f"{sum(logit_decrease_clean[i][j]) / len(logit_decrease_clean[i][j]):.4f} ")
+                    f.write("\n")
+                f.write("\n")
+                f.write("Noisy Decrease of original class logit\n")
+                f.write(f"target    0   1   2   3   4   5   6   7   8   9\n")
+                f.write(f"origin\n")
+                for i in range(10):
+                    f.write(f"{i}        ")
+                    for j in range(10):
+                        if len(logit_decrease_noisy[i][j]) == 0:
+                            f.write(f"0   ")
+                        else:
+                            f.write(f"{sum(logit_decrease_noisy[i][j]) / len(logit_decrease_noisy[i][j]):.4f} ")
+                    f.write("\n")
+                f.write("\n")
 
             with open(f"{save_dir}log/log_detail.txt", "a") as f:
                 f.write(f"total_num_per_class: {total_num_per_class}\n")
