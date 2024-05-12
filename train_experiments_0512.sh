@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # 实验的不同参数
-declare -a p_unif=("0.02" "0.05" "0.1" "0.5")
-declare -a dates=("240512_1" "240512_2" "240512_3" "240512_4")
+declare -a p_unif=("0.02" "0.05" "0.5")
+declare -a dates=("240512_5" "240512_6" "240512_7" )
 
 # 循环数组，逐个运行实验
 for i in ${!p_unif[@]}; do
   # 构建运行命令
-  COMMAND="python script2.py --date ${dates[$i]} --cond_mode AdaGN --p_unif ${p_unif[$i]} --class_type label --lmda 1 --regress_type digit"
+  COMMAND="python script.py --date ${dates[$i]} --cond_mode AdaGN --p_unif ${p_unif[$i]} --class_type label "
 
   # 在当前tmux窗口运行命令
   echo "Running command: $COMMAND"
