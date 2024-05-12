@@ -44,8 +44,8 @@ def main():
     parser.add_argument('--noisy_classifier_name', type=str, help="directory of noisy classifier")
     parser.add_argument('--dataset_type', type=str, choices=["ID", "OOD"], help="type of dataset")
     parser.add_argument('--p_unif', type=float, default=0.01, help='Used in generating test data')
-    parser.add_argument('--batch_size', type=int, default=128, help='batch size for test data')
-    parser.add_argument('--batch_num', type=int, default=10, help='number of batches to test')
+    parser.add_argument('--batch_size', type=int, default=16, help='batch size for test data')
+    parser.add_argument('--batch_num', type=int, default=100, help='number of batches to test')
     args = parser.parse_args()
 
     test(args)
