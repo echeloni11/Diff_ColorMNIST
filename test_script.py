@@ -90,11 +90,16 @@ def test(args):
 
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=5)
 
-    total_num_per_class = torch.zeros(10)   # total_num_per_class[i] is the number of class i
+    total_num_per_class = torch.zeros(10, device=device)
+    total_num_per_class_clean = torch.zeros(10, device=device)   # total_num_per_class[i] is the number of class i
+    total_num_per_class_noisy = torch.zeros(10, device=device)
     # Metric 1: Accuracy
-    correct_num_per_class = []  # correct_num_per_class[i][j] is the number of class j do(hue=i) and remain class j
+    correct_num_per_class_clean = []  # correct_num_per_class[i][j] is the number of class j do(hue=i) and remain class j
     for i in range(10):
-        correct_num_per_class.append(torch.zeros(10))
+        correct_num_per_class_clean.append(torch.zeros(10, device=device))
+    correct_num_per_class_noisy = []  # correct_num_per_class[i][j] is the number of class j do(hue=i) and remain class j
+    for i in range(10):
+        correct_num_per_class_noisy.append(torch.zeros(10, device=device))
     
     # Metric 2: Decrease of original class logit
     # logit_decrease[i][j] is the decrease of logit of every sample of class j do(hue=i)
@@ -135,18 +140,26 @@ def test(args):
             elif args.dataset_type == "OOD":
                 x, hues = add_hue_confounded(x, (c+5)%10, p_unif)
 
-            total_num_per_class += torch.bincount(c, minlength=10)
+            # total_num_per_class += torch.bincount(c, minlength=10)
+            for l in range(len(c)):
+                total_num_per_class[c[l]] += 1
+                if not error_clean[l]:
+                    total_num_per_class_clean[c[l]] += 1
+                if not error_noisy[l]:
+                    total_num_per_class_noisy[c[l]] += 1
 
             u = ddpm.abduct(x, c, size=(3,28,28), device=device, guide_w=2.0, hues=hues)
             for i in range(10):
                 target_hues = torch.ones_like(hues, device=device) * i / 10 + 0.05 
-                x_cf_i = ddpm.reconstruct(u, c, size=(3,28,28), device=device, guide_w=2.0, hues=hues)
+                x_cf_i = ddpm.reconstruct(u, c, size=(3,28,28), device=device, guide_w=2.0, hues=target_hues)
                 # turn x_cf_i into grayscale
-                hsv_image = cv2.cvtColor(x_cf_i.permute(0,2,3,1).cpu().numpy(), cv2.COLOR_RGB2HSV)
-                x_cf_i_gray = torch.tensor(hsv_image[...,2], device=device).unsqueeze(1)
 
+                x_cf_i_gray = 0.299 * x_cf_i[:,0,:,:] + 0.587 * x_cf_i[:,1,:,:] + 0.114 * x_cf_i[:,2,:,:]
+                x_cf_i_gray = (x_cf_i_gray / x_cf_i_gray.max(dim=0)[0]).view(x_cf_i_gray.shape[0],1,x_cf_i_gray.shape[1],-1)
+                
                 # debug
-                printf(f"x_cf_i_gray shape: {x_cf_i_gray.shape}")
+                # print(f"x_cf_i shape: {x_cf_i.shape}")
+                # print(f"x_cf_i_gray shape: {x_cf_i_gray.shape}")
 
                 logit_cf_i_clean = classifier_clean(x_cf_i_gray)
                 logit_cf_i_noisy = classifier_noisy(x_cf_i_gray)
@@ -156,39 +169,53 @@ def test(args):
                 # Metric 1: Accuracy
                 correct_cf_i_clean = c_pred_cf_i_clean == c
                 correct_cf_i_noisy = c_pred_cf_i_noisy == c
-                for l in len(c):
+                for l in range(len(c)):
                     if correct_cf_i_clean[l] and not error_clean[l]:
-                        correct_num_per_class[i][c[l]] += 1
+                        correct_num_per_class_clean[i][c[l]] += 1
                     if correct_cf_i_noisy[l] and not error_noisy[l]:
-                        correct_num_per_class[i][c[l]] += 1
+                        correct_num_per_class_noisy[i][c[l]] += 1
                 
                 # Metric 2: Decrease of original class logit
-                for l in len(c):
+                for l in range(len(c)):
                     if not error_clean[l]:
-                        logit_decrease_clean[i][c[l]].append(logit_clean[l][c[l]] - logit_cf_i_clean[l][c[l]])
+                        logit_decrease_clean[i][c[l]].append((torch.exp(logit_clean[l][c[l]]) - torch.exp(logit_cf_i_clean[l][c[l]])).item())
                     if not error_noisy[l]:
-                        logit_decrease_noisy[i][c[l]].append(logit_noisy[l][c[l]] - logit_cf_i_noisy[l][c[l]])
+                        logit_decrease_noisy[i][c[l]].append((torch.exp(logit_noisy[l][c[l]]) - torch.exp(logit_cf_i_noisy[l][c[l]])).item())
 
                 # Metric 3: Increase of second largest logit
-                for l in len(c):
+                for l in range(len(c)):
                     if not error_clean[l]:
                         second_largest_index_clean = torch.argsort(logit_cf_i_clean[l], descending=True)[1] \
                             if c[l] == torch.argmax(logit_cf_i_clean[l]) else torch.argmax(logit_cf_i_clean[l])
-                        logit_increase_clean[i][c[l]].append(logit_cf_i_clean[l][second_largest_index_clean] - logit_clean[l][second_largest_index_clean])
+                        logit_increase_clean[i][c[l]].append((torch.exp(logit_cf_i_clean[l][second_largest_index_clean]) - torch.exp(logit_clean[l][second_largest_index_clean])).item())
                     if not error_noisy[l]:
                         second_largest_index_noisy = torch.argsort(logit_cf_i_noisy[l], descending=True)[1] \
                             if c[l] == torch.argmax(logit_cf_i_noisy[l]) else torch.argmax(logit_cf_i_noisy[l])
-                        logit_increase_noisy[i][c[l]].append(logit_cf_i_noisy[l][second_largest_index_noisy] - logit_noisy[l][second_largest_index_noisy])
+                        logit_increase_noisy[i][c[l]].append((torch.exp(logit_cf_i_noisy[l][second_largest_index_noisy]) - torch.exp(logit_noisy[l][second_largest_index_noisy])).item())
             
             # log current batch information
-            with open(f"{save_dir}log/{k}.txt", "w") as f:
+
+            current_correct_clean = [torch.sum(correct_num_per_class_clean[i])/torch.sum(total_num_per_class_clean[i]) for i in range(10)]
+            current_correct_noisy = [torch.sum(correct_num_per_class_noisy[i])/torch.sum(total_num_per_class_noisy[i]) for i in range(10)]
+
+            with open(f"{save_dir}log/log_result.txt", "a") as f:
                 f.write(f"total_num_per_class: {total_num_per_class}\n")
                 f.write(f"correct_num_per_class: {correct_num_per_class}\n")
                 f.write(f"logit_decrease_clean: {logit_decrease_clean}\n")
                 f.write(f"logit_decrease_noisy: {logit_decrease_noisy}\n")
                 f.write(f"logit_increase_clean: {logit_increase_clean}\n")
                 f.write(f"logit_increase_noisy: {logit_increase_noisy}\n")
+                f.write(f"\n")
 
+            with open(f"{save_dir}log/log_detail.txt", "a") as f:
+                f.write(f"total_num_per_class: {total_num_per_class}\n")
+                f.write(f"correct_num_per_class: {correct_num_per_class}\n")
+                f.write(f"logit_decrease_clean: {logit_decrease_clean}\n")
+                f.write(f"logit_decrease_noisy: {logit_decrease_noisy}\n")
+                f.write(f"logit_increase_clean: {logit_increase_clean}\n")
+                f.write(f"logit_increase_noisy: {logit_increase_noisy}\n")
+                f.write(f"\n")
+    
 if __name__ == "__main__":
     main()
 

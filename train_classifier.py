@@ -49,6 +49,7 @@ model = Classifier(input_channels=1).to(device)
 losses_1 = []
 losses_2 = []
 
+
 def train(model, device, train_loader, optimizer, epoch, p_unif):
     model.train()
     
@@ -56,6 +57,12 @@ def train(model, device, train_loader, optimizer, epoch, p_unif):
         # send the image, target to the device
         data, target = data.to(device), target.to(device)
         # data, hues = add_hue_confounded(data, target, p_unif=p_unif)
+
+        # noise = torch.randn_like(data).to(device)
+        # noise_scale = torch.rand(1).to(device) * 0.1
+
+        # data = data + noise * noise_scale
+        
         # flush out the gradients stored in optimizer
         optimizer.zero_grad()
         # pass the image to the model and assign the output to variable named output
