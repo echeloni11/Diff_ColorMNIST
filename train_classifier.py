@@ -22,9 +22,8 @@ device = torch.device(f'cuda:{rank}' if torch.cuda.is_available() else 'cpu')
 
 # define a transforms for preparing the dataset
 transform = transforms.Compose([
-        transforms.CenterCrop(26),
-        transforms.Resize((28,28)),
-        transforms.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.05, hue=0.05),
+
+        # transforms.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.05, hue=0.05),
         transforms.RandomRotation(10),      
         transforms.RandomAffine(5),
         
@@ -32,14 +31,21 @@ transform = transforms.Compose([
         transforms.ToTensor(), 
         
         # normalise the images with mean and std of the dataset
-        transforms.Normalize((0.1307,), (0.3081,)) 
+        # transforms.Normalize((0.1307,), (0.3081,)) 
+        ])
+
+tf = transforms.Compose([
+        # convert the image to a pytorch tensor
+        transforms.ToTensor(), 
+        # normalise the images with mean and std of the dataset
+        # transforms.Normalize((0.1307,), (0.3081,)) 
         ])
 
 # Load the MNIST training, test datasets using `torchvision.datasets.MNIST` 
 # using the transform defined above
 
 train_dataset = datasets.MNIST('./data',train=True,transform=transform,download=True)
-test_dataset =  datasets.MNIST('./data',train=False,transform=transform,download=True)
+test_dataset =  datasets.MNIST('./data',train=False,transform=tf,download=True)
 
 train_dataloader = Data.DataLoader(dataset=train_dataset, batch_size=128, shuffle=True)
 test_dataloader = Data.DataLoader(dataset=test_dataset, batch_size=128, shuffle=True)
@@ -58,10 +64,10 @@ def train(model, device, train_loader, optimizer, epoch, p_unif):
         data, target = data.to(device), target.to(device)
         # data, hues = add_hue_confounded(data, target, p_unif=p_unif)
 
-        # noise = torch.randn_like(data).to(device)
-        # noise_scale = torch.rand(1).to(device) * 0.1
+        noise = torch.randn_like(data).to(device)
+        noise_scale = torch.rand(1).to(device) * 0.2
 
-        # data = data + noise * noise_scale
+        data = (data + noise * noise_scale).clip(0,1)
         
         # flush out the gradients stored in optimizer
         optimizer.zero_grad()
@@ -133,6 +139,6 @@ for epoch in range(0, 61):
     train(model, device, train_dataloader, optimizer, epoch, p_unif)
     test(model, device, test_dataloader, p_unif=1)
     if epoch % 20 == 0:
-        torch.save(model.state_dict(), f"./trained_classifiers/model_gray_clean_{epoch}.pt")
+        torch.save(model.state_dict(), f"./trained_classifiers/model_gray_noisy_{epoch}.pt")
 stop = timeit.default_timer()
 print('Total time taken: {} seconds'.format(int(stop - start)))

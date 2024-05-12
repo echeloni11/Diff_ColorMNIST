@@ -55,6 +55,7 @@ def test(args):
     n_classes = 10
     n_feat = 256 # 128 ok, 256 better (but slower)
     drop_prob = 0.5
+    save_freq = args.batch_num // 10
     p_unif = args.p_unif
 
     save_dir = f'./test_experiments/{args.date}/'
@@ -135,6 +136,23 @@ def test(args):
             error_clean = c_pred_clean != c
             error_noisy = c_pred_noisy != c
 
+            # # debug
+            # # print everything
+            # print(f"c_true {c}")
+            # print(f"logit_clean {torch.exp(logit_clean).detach().cpu().numpy().tolist()}")
+            # print(f"logit_noisy {torch.exp(logit_noisy).detach().cpu().numpy().tolist()}")
+            # print(f"c_pred_clean {c_pred_clean.detach().cpu().numpy().tolist()}")
+            # print(f"c_pred_noisy {c_pred_noisy.detach().cpu().numpy().tolist()}")
+            # print(f"error_clean {error_clean}")
+            # print(f"error_noisy {error_noisy}")
+            
+            # debug
+            # save image x
+            if k % save_freq == 0:
+                grid = make_grid(x*-1 + 1, nrow=8)
+                save_image(grid, save_dir + f"image/x_ori_batch{k}.png")
+
+
             if args.dataset_type == "ID":
                 x, hues = add_hue_confounded(x, c, p_unif)
             elif args.dataset_type == "OOD":
@@ -147,6 +165,14 @@ def test(args):
                     total_num_per_class_clean[c[l]] += 1
                 if not error_noisy[l]:
                     total_num_per_class_noisy[c[l]] += 1
+            
+            # debug
+            # print(f"total_num_per_class {total_num_per_class.detach().cpu().numpy().tolist()}")
+            # print(f"total_num_per_class_clean {total_num_per_class_clean.detach().cpu().numpy().tolist()}")
+            # print(f"total_num_per_class_noisy {total_num_per_class_noisy.detach().cpu().numpy().tolist()}")
+            if k % save_freq == 0:
+                grid = make_grid(x*-1+1, nrow=8)
+                save_image(grid, save_dir + f"image/x_colored_batch{k}.png")
 
             u = ddpm.abduct(x, c, size=(3,28,28), device=device, guide_w=2.0, hues=hues)
             for i in range(10):
@@ -156,15 +182,22 @@ def test(args):
 
                 x_cf_i_gray = 0.299 * x_cf_i[:,0,:,:] + 0.587 * x_cf_i[:,1,:,:] + 0.114 * x_cf_i[:,2,:,:]
                 x_cf_i_gray = (x_cf_i_gray / x_cf_i_gray.max(dim=0)[0]).view(x_cf_i_gray.shape[0],1,x_cf_i_gray.shape[1],-1)
-                
-                # debug
-                # print(f"x_cf_i shape: {x_cf_i.shape}")
-                # print(f"x_cf_i_gray shape: {x_cf_i_gray.shape}")
 
                 logit_cf_i_clean = classifier_clean(x_cf_i_gray)
                 logit_cf_i_noisy = classifier_noisy(x_cf_i_gray)
                 c_pred_cf_i_clean = torch.argmax(logit_cf_i_clean, dim=1)
                 c_pred_cf_i_noisy = torch.argmax(logit_cf_i_noisy, dim=1)
+
+                # # debug
+                # print(f"logit_cf_i_clean {torch.exp(logit_cf_i_clean).detach().cpu().numpy().tolist()}")
+                # print(f"logit_cf_i_noisy {torch.exp(logit_cf_i_noisy).detach().cpu().numpy().tolist()}")
+                # print(f"c_pred_cf_i_clean {c_pred_cf_i_clean.detach().cpu().numpy().tolist()}")
+                # print(f"c_pred_cf_i_noisy {c_pred_cf_i_noisy.detach().cpu().numpy().tolist()}")
+                if k % save_freq == 0:
+                    grid = make_grid(x_cf_i*-1+1, nrow=8)
+                    save_image(grid, save_dir + f"image/x_cf_to{i}_batch{k}.png")
+                    grid = make_grid(x_cf_i_gray*-1+1, nrow=8)
+                    save_image(grid, save_dir + f"image/x_cf_gray_to{i}_batch{k}.png")
 
                 # Metric 1: Accuracy
                 correct_cf_i_clean = c_pred_cf_i_clean == c
@@ -197,12 +230,24 @@ def test(args):
             clean_acc = sum([torch.sum(correct_num_per_class_clean[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_clean).item()
             noisy_acc = sum([torch.sum(correct_num_per_class_noisy[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_noisy).item()
             print(f"Batch {k}: Clean Accuracy: {clean_acc}, Noisy Accuracy: {noisy_acc}")
-            clean_ori_decrease = [sum([sum(logit_decrease_clean[i][j]) for j in range(10)]) / len(logit_decrease_clean[i][j]) if len(logit_decrease_clean[i][j]) != 0 else 0 for i in range(10)]
-            noisy_ori_decrease = [sum([sum(logit_decrease_noisy[i][j]) for j in range(10)]) / len(logit_decrease_noisy[i][j]) if len(logit_decrease_noisy[i][j]) != 0 else 0 for i in range(10)]
+            clean_ori_decrease = 0
+            noisy_ori_decrease = 0
+            clean_sec_increase = 0
+            noisy_sec_increase = 0
+            for i in range(10):
+                for j in range(10):
+                    clean_ori_decrease += sum(logit_decrease_clean[i][j])
+                    noisy_ori_decrease += sum(logit_decrease_noisy[i][j])
+                    clean_sec_increase += sum(logit_increase_clean[i][j])
+                    noisy_sec_increase += sum(logit_increase_noisy[i][j])
+            current_num = (k+1) * args.batch_size * 10
+            clean_ori_decrease /= current_num
+            noisy_ori_decrease /= current_num
+            clean_sec_increase /= current_num
+            noisy_sec_increase /= current_num
             print(f"Batch {k}: Clean Decrease of original class logit: {clean_ori_decrease}")
             print(f"Batch {k}: Noisy Decrease of original class logit: {noisy_ori_decrease}")
-            clean_sec_increase = [sum([sum(logit_increase_clean[i][j]) for j in range(10)]) / len(logit_increase_clean[i][j]) if len(logit_increase_clean[i][j]) != 0 else 0 for i in range(10)]
-            noisy_sec_increase = [sum([sum(logit_increase_noisy[i][j]) for j in range(10)]) / len(logit_increase_noisy[i][j]) if len(logit_increase_noisy[i][j]) != 0 else 0 for i in range(10)]
+
             print(f"Batch {k}: Clean Increase of second largest logit: {clean_sec_increase}")
             print(f"Batch {k}: Noisy Increase of second largest logit: {noisy_sec_increase}")
 
@@ -212,14 +257,12 @@ def test(args):
                 f.write("Clean Accuracy\n")
                 f.write(f"origin            total_num               Accuracy\n")
                 for i in range(10):
-                    f.write(f"{i}                 {total_num_per_class_clean[i]} ({total_num_per_class[i]})\
-                                     {correct_num_per_class_clean[i] / total_num_per_class[i]}\n")
+                    f.write(f"{i}                 {total_num_per_class_clean[i]} ({total_num_per_class[i]})    {(correct_num_per_class_clean[i] / total_num_per_class[i]).detach().cpu().numpy().tolist()}\n")
                 f.write("\n")
                 f.write("Noisy Accuracy\n")
                 f.write(f"origin            total_num               Accuracy\n")
                 for i in range(10):
-                    f.write(f"{i}                 {total_num_per_class_noisy[i]} ({total_num_per_class[i]})\
-                                     {correct_num_per_class_noisy[i] / total_num_per_class[i]}\n")
+                    f.write(f"{i}                 {total_num_per_class_noisy[i]} ({total_num_per_class[i]})    {(correct_num_per_class_noisy[i] / total_num_per_class[i]).detach().cpu().numpy().tolist()}\n")
                 f.write("\n")
 
                 # Metric 2: Decrease of original class logit
@@ -249,8 +292,9 @@ def test(args):
                 f.write("\n")
 
             with open(f"{save_dir}log/log_detail.txt", "a") as f:
-                f.write(f"total_num_per_class: {total_num_per_class}\n")
-                f.write(f"correct_num_per_class: {correct_num_per_class}\n")
+                f.write(f"total_num_per_class: {total_num_per_class.detach().cpu().numpy().tolist()}\n")
+                f.write(f"correct_num_per_class_clean: {correct_num_per_class_clean.detach().cpu().numpy().tolist()}\n")
+                f.write(f"correct_num_per_class_noisy: {correct_num_per_class_noisy.detach().cpu().numpy().tolist()}\n")
                 f.write(f"logit_decrease_clean: {logit_decrease_clean}\n")
                 f.write(f"logit_decrease_noisy: {logit_decrease_noisy}\n")
                 f.write(f"logit_increase_clean: {logit_increase_clean}\n")

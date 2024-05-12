@@ -10,7 +10,7 @@
 /flip_results/*
 
 /diff_to_download/*
-
+/test_experiments/*
 
 *.gif
 *.png
