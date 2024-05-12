@@ -30,7 +30,7 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
-from network import DDPM, ContextUnet, ContextUnetColored, HueRegressor
+from network import DDPM, ContextUnet, ContextUnetColored, HueRegressor, DigitRegressor
 from dataset import add_hue_confounded, classifiedMNIST
 
 def main():
@@ -42,6 +42,7 @@ def main():
     parser.add_argument('--classifier_name', type=str, choices=[None,'0','0.01','0.05','0.1','1'], default=None, help='Classifier name for classified dataset')
     parser.add_argument('--class_type', type=str, choices=['label', 'logit'], default='label', help='Type of class encoding')
     parser.add_argument('--lmda', type=float, help='strength of CIL')
+    parser.add_argument('--regress_type', type=str, choices=['digit','hue','both'], default='hue',help='use what regressor for CIL')
     args = parser.parse_args()
 
     train_mnist(args)
@@ -69,6 +70,7 @@ def train_mnist(args):
     class_type = args.class_type           # "label" or "logits" (logits only used for classified data)
     ws_test = [0.0, 1.0]                # strength of generative guidance
     lmda = args.lmda                    # strength of CIL
+    reg_type = args.regress_type
 
     assert p_unif is not None or classifier_name is not None, \
         "at least one of p_unif and classifier_name should be set to indicate"
@@ -88,10 +90,17 @@ def train_mnist(args):
             betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=drop_prob)
     ddpm.to(device)
 
-    hue_reg_g = HueRegressor(n_classes, n_feat)
-    hue_reg_g.to(device)
-    hue_reg_h = HueRegressor(n_classes, n_feat)
-    hue_reg_h.to(device)
+    if reg_type == 'hue' or reg_type == 'both':
+        hue_reg_g = HueRegressor(n_classes, n_feat)
+        hue_reg_g.to(device)
+        hue_reg_h = HueRegressor(n_classes, n_feat)
+        hue_reg_h.to(device)
+    
+    if reg_type == 'digit' or reg_type == 'both':
+        digit_reg_g = DigitRegressor(n_feat=n_feat)
+        digit_reg_g.to(device)
+        digit_reg_h = DigitRegressor(n_feat=n_feat)
+        digit_reg_h.to(device)
 
     # optionally load a model
     # ddpm.load_state_dict(torch.load("./data/diffusion_outputs/ddpm_unet01_mnist_9.pth"))
@@ -101,8 +110,14 @@ def train_mnist(args):
         dataset = MNIST("./data", train=True, download=True, transform=tf)
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     # optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
-    optim_g = torch.optim.AdamW(hue_reg_g.parameters(), lr=lrate)
-    optim_other = torch.optim.AdamW(list(ddpm.parameters())+list(hue_reg_h.parameters()), lr=lrate)
+    if reg_type == 'digit':
+        optim_g = torch.optim.AdamW(digit_reg_g.parameters(), lr=lrate)
+        optim_other = torch.optim.AdamW(list(ddpm.parameters())+list(digit_reg_h.parameters()), lr=lrate)
+    elif reg_type == 'hue':
+        optim_g = torch.optim.AdamW(hue_reg_g.parameters(), lr=lrate)
+        optim_other = torch.optim.AdamW(list(ddpm.parameters())+list(hue_reg_h.parameters()), lr=lrate)
+    elif reg_type == 'both':
+        raise NotImplementedError
 
     for ep in range(n_epoch):
         print(f'epoch {ep}')
@@ -128,34 +143,52 @@ def train_mnist(args):
                 if mnist_color:
                     x, hues = add_hue_confounded(x, c, p_unif)
 
-            optim_g.zero_grad()
             x = x.to(device)    # batch, 1, 28, 28
             c = c.to(device)    # batch
             hues = hues.to(device) if hues is not None else None
 
             hidden_vec = ddpm.nn_model.encode(x)
-            hue_pred_g = hue_reg_g(hidden_vec, c)
-            loss_g = F.mse_loss(hue_pred_g.view(-1), hues.view(-1))
-            loss_g.backward()
-            optim_g.step()
+            if reg_type == 'hue':
+                optim_g.zero_grad()
+                hue_pred_g = hue_reg_g(hidden_vec, c)
+                loss_g = F.mse_loss(hue_pred_g.view(-1), hues.view(-1))
+                loss_g.backward()
+                optim_g.step()
+            elif reg_type == 'digit':
+                optim_g.zero_grad()
+                digit_pred_g = digit_reg_g(hidden_vec, hues)
+                loss_g = F.cross_entropy(digit_pred_g, c)
+
+                # loss_g = F.mse_loss(digit_pred_g, nn.functional.one_hot(c, num_classes=10))
+                loss_g.backward(retain_graph=True)
+                optim_g.step()
+            
+            loss_g_first = loss_g.detach().clone()
             
             optim_other.zero_grad()
             if class_type == "label":
                 loss_ddpm = ddpm(x, c, hues)
             elif class_type == "logit":
                 loss_ddpm = ddpm(x, logit, hues)
-            hidden_vec = ddpm.nn_model.encode(x)
-            hue_pred_h = hue_reg_h(hidden_vec, torch.zeros_like(c, device=device))
-            hue_pred_g = hue_reg_g(hidden_vec, c)
-            loss_h = F.mse_loss(hue_pred_h.view(-1), hues.view(-1))
-            loss_g = F.mse_loss(hue_pred_g.view(-1), hues.view(-1))
+            # hidden_vec = ddpm.nn_model.encode(x)
+            if reg_type == 'hue':
+                hue_pred_h = hue_reg_h(hidden_vec, torch.zeros_like(c, device=device))
+                hue_pred_g = hue_reg_g(hidden_vec, c)
+                loss_h = F.mse_loss(hue_pred_h.view(-1), hues.view(-1))
+                loss_g = F.mse_loss(hue_pred_g.view(-1), hues.view(-1))
+            elif reg_type == 'digit':
+                digit_pred_h = digit_reg_h(hidden_vec)
+                digit_pred_g = digit_reg_g(hidden_vec, hues)
+                loss_h = F.cross_entropy(digit_pred_h, c)
+                loss_g = F.cross_entropy(digit_pred_g, c)
+                # loss_g = F.mse_loss(digit_pred_g, nn.functional.one_hot(c, num_classes=10))
             loss = loss_ddpm + lmda * (loss_h - loss_g)
             loss.backward()
             if loss_ema is None:
                 loss_ema = loss.item()
             else:
                 loss_ema = 0.95 * loss_ema + 0.05 * loss.item()
-            pbar.set_description(f"loss: {loss_ema:.4f} g: {loss_g.item():.4f} h: {loss_h.item():.4f} ddpm: {loss_ddpm.item():.4f}")
+            pbar.set_description(f"loss: {loss_ema:.4f} g_first: {loss_g_first.item():.4f} g: {loss_g.item():.4f} h: {loss_h.item():.4f} ddpm: {loss_ddpm.item():.4f}")
             optim_other.step()
         
         # for eval, save an image of currently generated samples (top rows)

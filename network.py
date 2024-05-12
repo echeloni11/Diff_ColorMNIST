@@ -836,6 +836,32 @@ class HueRegressor(nn.Module):
         x = self.fc3(x)
         return x
 
+
+class DigitRegressor(nn.Module):
+    def __init__(self, n_classes=10, n_feat=256):
+        super(DigitRegressor, self).__init__()
+        self.hemb = EmbedFC(1, 2*n_feat)
+        self.n_feat = n_feat
+        self.n_classes = n_classes
+        self.fc1 = nn.Linear(4*n_feat, 2*n_feat)
+        self.fc2 = nn.Linear(2*n_feat, n_feat)
+        self.fc3 = nn.Linear(n_feat, n_classes)
+
+        self.huenullembed = nn.Parameter(torch.zeros(2*n_feat)).view(1,-1,1,1)
+    
+    def forward(self, x, h=None):
+        # hidden vector x shape [256, 512, 1, 1]
+        if h is None:
+            hemb = self.huenullembed.repeat(x.shape[0],1,1,1).to(x.device)
+        else: 
+            hemb = self.hemb(h).view(-1, 2*self.n_feat, 1, 1)
+        x = torch.cat((x, hemb), 1).view(x.shape[0],-1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+
 class Classifier(nn.Module):
     # simple CNN for classificaiton
     def __init__(self):

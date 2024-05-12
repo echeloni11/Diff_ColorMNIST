@@ -11,4 +11,4 @@ skip 240508_1 Attention 0 logit
 
 python script.py --date 240508_21 --cond_mode Attention --p_unif 0.01 --class_type label
 
-python script2.py --date 240511_4 --cond_mode AdaGN --p_unif 0.01 --class_type label --lmda 0.1
+python script2.py --date 240511_5 --cond_mode AdaGN --p_unif 0.01 --class_type label --lmda 0.1 --regress_type digit
