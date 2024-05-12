@@ -89,7 +89,7 @@ def test(args):
     tf = transforms.Compose([transforms.ToTensor()]) # mnist is already normalised 0 to 1
     dataset = MNIST("./data", train=False, download=True, transform=tf)
 
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=5)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=5)
 
     total_num_per_class = torch.zeros(10, device=device)
     total_num_per_class_clean = torch.zeros(10, device=device)   # total_num_per_class[i] is the number of class i
@@ -291,15 +291,15 @@ def test(args):
                     f.write("\n")
                 f.write("\n")
 
-            with open(f"{save_dir}log/log_detail.txt", "a") as f:
-                f.write(f"total_num_per_class: {total_num_per_class.detach().cpu().numpy().tolist()}\n")
-                f.write(f"correct_num_per_class_clean: {correct_num_per_class_clean.detach().cpu().numpy().tolist()}\n")
-                f.write(f"correct_num_per_class_noisy: {correct_num_per_class_noisy.detach().cpu().numpy().tolist()}\n")
-                f.write(f"logit_decrease_clean: {logit_decrease_clean}\n")
-                f.write(f"logit_decrease_noisy: {logit_decrease_noisy}\n")
-                f.write(f"logit_increase_clean: {logit_increase_clean}\n")
-                f.write(f"logit_increase_noisy: {logit_increase_noisy}\n")
-                f.write(f"\n")
+            # with open(f"{save_dir}log/log_detail.txt", "a") as f:
+            #     f.write(f"total_num_per_class: {total_num_per_class.detach().cpu().numpy().tolist()}\n")
+            #     f.write(f"correct_num_per_class_clean: {correct_num_per_class_clean.detach().cpu().numpy().tolist()}\n")
+            #     f.write(f"correct_num_per_class_noisy: {correct_num_per_class_noisy.detach().cpu().numpy().tolist()}\n")
+            #     f.write(f"logit_decrease_clean: {logit_decrease_clean}\n")
+            #     f.write(f"logit_decrease_noisy: {logit_decrease_noisy}\n")
+            #     f.write(f"logit_increase_clean: {logit_increase_clean}\n")
+            #     f.write(f"logit_increase_noisy: {logit_increase_noisy}\n")
+            #     f.write(f"\n")
     
 if __name__ == "__main__":
     main()
