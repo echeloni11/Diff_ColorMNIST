@@ -13,7 +13,7 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(0)
 
-rank = 3
+rank = 0
 
 # check availability of GPU and set the device accordingly
 
@@ -24,7 +24,7 @@ device = torch.device(f'cuda:{rank}' if torch.cuda.is_available() else 'cpu')
 transform = transforms.Compose([
         transforms.CenterCrop(26),
         transforms.Resize((28,28)),
-        # transforms.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.05, hue=0.05),
+        transforms.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.05, hue=0.05),
         transforms.RandomRotation(10),      
         transforms.RandomAffine(5),
         
@@ -44,7 +44,7 @@ test_dataset =  datasets.MNIST('./data',train=False,transform=transform,download
 train_dataloader = Data.DataLoader(dataset=train_dataset, batch_size=128, shuffle=True)
 test_dataloader = Data.DataLoader(dataset=test_dataset, batch_size=128, shuffle=True)
 
-model = Classifier().to(device)
+model = Classifier(input_channels=1).to(device)
 
 losses_1 = []
 losses_2 = []
@@ -55,7 +55,7 @@ def train(model, device, train_loader, optimizer, epoch, p_unif):
     for batch_idx, (data, target) in enumerate(train_loader):
         # send the image, target to the device
         data, target = data.to(device), target.to(device)
-        data, hues = add_hue_confounded(data, target, p_unif=p_unif)
+        # data, hues = add_hue_confounded(data, target, p_unif=p_unif)
         # flush out the gradients stored in optimizer
         optimizer.zero_grad()
         # pass the image to the model and assign the output to variable named output
@@ -85,7 +85,7 @@ def test(model, device, test_loader, p_unif):
           
             # send the image, target to the device
             data, target = data.to(device), target.to(device)
-            data, hues = add_hue_confounded(data, target, p_unif=p_unif)
+            # data, hues = add_hue_confounded(data, target, p_unif=p_unif)
             # pass the image to the model and assign the output to variable named output
             output = model(data)
             test_loss += F.nll_loss(output, target, reduction='sum').item() # sum up batch loss
@@ -126,6 +126,6 @@ for epoch in range(0, 61):
     train(model, device, train_dataloader, optimizer, epoch, p_unif)
     test(model, device, test_dataloader, p_unif=1)
     if epoch % 20 == 0:
-        torch.save(model.state_dict(), "./trained_classifiers/model{}_{}.pt".format(p_unif, epoch))
+        torch.save(model.state_dict(), f"./trained_classifiers/model_gray_clean_{epoch}.pt")
 stop = timeit.default_timer()
 print('Total time taken: {} seconds'.format(int(stop - start)))

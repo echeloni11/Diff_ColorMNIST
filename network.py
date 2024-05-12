@@ -864,14 +864,14 @@ class DigitRegressor(nn.Module):
 
 class Classifier(nn.Module):
     # simple CNN for classificaiton
-    def __init__(self):
+    def __init__(self, input_channels=3):
         super(Classifier, self).__init__()
         
         # define a conv layer with output channels as 16, kernel size of 3 and stride of 1
-        self.conv11 = nn.Conv2d(3, 16, 3, 1) # Input = 1x28x28  Output = 16x26x26
-        self.conv12 = nn.Conv2d(3, 16, 5, 1) # Input = 1x28x28  Output = 16x24x24
-        self.conv13 = nn.Conv2d(3, 16, 7, 1) # Input = 1x28x28  Output = 16x22x22
-        self.conv14 = nn.Conv2d(3, 16, 9, 1) # Input = 1x28x28  Output = 16x20x20
+        self.conv11 = nn.Conv2d(input_channels, 16, 3, 1) # Input = 1x28x28  Output = 16x26x26
+        self.conv12 = nn.Conv2d(input_channels, 16, 5, 1) # Input = 1x28x28  Output = 16x24x24
+        self.conv13 = nn.Conv2d(input_channels, 16, 7, 1) # Input = 1x28x28  Output = 16x22x22
+        self.conv14 = nn.Conv2d(input_channels, 16, 9, 1) # Input = 1x28x28  Output = 16x20x20
 
         # define a conv layer with output channels as 32, kernel size of 3 and stride of 1
         self.conv21 = nn.Conv2d(16, 32, 3, 1) # Input = 16x26x26 Output = 32x24x24
