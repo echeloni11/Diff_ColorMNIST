@@ -287,6 +287,7 @@ def test(args):
             # log current batch information
             with open(f"{save_dir}log/log_result.txt", "a") as f:
                 # Metric 1: Accuracy
+                f.write(f"Batch {k}")
                 f.write("Clean Accuracy\n")
                 f.write(f"origin            total_num               Accuracy\n")
                 for i in range(10):
