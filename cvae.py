@@ -171,7 +171,7 @@ class CVAE(nn.Module):
         hiddenvec = self.to_vec(down2).view(x.shape[0], -1)
         mu = self.mu(hiddenvec)
         logvar = self.logvar(hiddenvec)
-        return mu, logvar, down1, down2
+        return mu, logvar
     
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5*logvar)
@@ -213,7 +213,7 @@ class CVAE(nn.Module):
         return out
 
     def forward(self, x, c, hue):
-        mu, logvar, down1, down2 = self.encoder(x)
+        mu, logvar = self.encoder(x)
         z = self.reparameterize(mu,logvar)
 
         # Class and hue conditioning

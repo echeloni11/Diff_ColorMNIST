@@ -95,7 +95,7 @@ def train_mnist(args):
             x, c = val
             hues = None
 
-            x, hues = add_hue_confounded(x, c, p_unif)
+            x, hues = add_hue_confounded(x, c, p_unif=p_unif)
 
             optim.zero_grad()
             x = x.to(device)    # batch, 3, 28, 28
@@ -133,7 +133,7 @@ def train_mnist(args):
             reconstruction_loss = 0
             kld_loss = 0
             for i,(x,c) in enumerate(testloader):
-                x, hues = add_hue_confounded(x, c, p_unif)
+                x, hues = add_hue_confounded(x, c, p_unif=p_unif)
                 x = x.to(device)
                 c = c.to(device)
                 hues = hues.to(device)
