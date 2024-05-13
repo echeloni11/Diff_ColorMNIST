@@ -864,7 +864,7 @@ class DigitRegressor(nn.Module):
 
 class Classifier(nn.Module):
     # simple CNN for classificaiton
-    def __init__(self, input_channels=3):
+    def __init__(self, input_channels=3, output_dim=10):
         super(Classifier, self).__init__()
         
         # define a conv layer with output channels as 16, kernel size of 3 and stride of 1
@@ -906,8 +906,13 @@ class Classifier(nn.Module):
         self.fc23 = nn.Linear(256, 128)
         self.fc24 = nn.Linear(256, 128)
 
-        self.fc33 = nn.Linear(128*4,10)
+        self.fc33 = nn.Linear(128*4,output_dim)
         #self.fc33 = nn.Linear(64*3,10)
+
+        if output_dim == 1:
+            self.type = "regress"
+        else:
+            self.type = "classify"
         
 
     def forward(self, inp):
@@ -959,6 +964,9 @@ class Classifier(nn.Module):
         out_f = torch.cat((x, y, z, ze), dim=1)
         #out_f1 = torch.cat((out_f, ze), dim=1)
         out = self.fc33(out_f)
-        
-        output = F.log_softmax(out, dim=1)
+
+        if self.type == "regress":
+            output = out
+        elif self.type == "classify":
+            output = F.log_softmax(out, dim=1)
         return output

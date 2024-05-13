@@ -40,12 +40,15 @@ def main():
     parser.add_argument('--date', type=str, help='Date for saving experiments')
     parser.add_argument('--rank', type=int, default=0)
     parser.add_argument('--model_name', type=str, help="directory of generative model")
-    parser.add_argument('--clean_classifier_name', type=str, help="directory of clean classifier")
-    parser.add_argument('--noisy_classifier_name', type=str, help="directory of noisy classifier")
+    parser.add_argument('--clean_classifier_name', type=str, default="./trained_classifiers/model_gray_clean_60.pt", help="directory of clean classifier")
+    parser.add_argument('--noisy_classifier_name', type=str, default="./trained_classifiers/model_gray_noisy_60.pt", help="directory of noisy classifier")
+    parser.add_argument('--clean_hue_regressor_name', type=str, default="./trained_classifiers/hue_clean_60.pt", help="directory of clean hue regressor")
+    parser.add_argument('--noisy_hue_regressor_name', type=str, default="./trained_classifiers/hue_noisy_60.pt", help="directory of noisy hue regressor")
     parser.add_argument('--dataset_type', type=str, choices=["ID", "OOD"], help="type of dataset")
     parser.add_argument('--p_unif', type=float, default=0.01, help='Used in generating test data')
     parser.add_argument('--batch_size', type=int, default=16, help='batch size for test data')
     parser.add_argument('--batch_num', type=int, default=100, help='number of batches to test')
+
     args = parser.parse_args()
 
     test(args)
@@ -55,7 +58,7 @@ def test(args):
     n_classes = 10
     n_feat = 256 # 128 ok, 256 better (but slower)
     drop_prob = 0.5
-    save_freq = args.batch_num // 10
+    save_freq = args.batch_num // 20
     p_unif = args.p_unif
 
     save_dir = f'./test_experiments/{args.date}/'
@@ -85,6 +88,16 @@ def test(args):
     classifier_noisy.load_state_dict(torch.load(args.noisy_classifier_name, map_location=device))
     classifier_noisy.to(device)
     classifier_noisy.eval()
+
+    hue_reg_clean = Classifier(output_dim=1)
+    hue_reg_clean.load_state_dict(torch.load(args.clean_hue_regressor_name, map_location=device))
+    hue_reg_clean.to(device)
+    hue_reg_clean.eval()
+
+    hue_reg_noisy = Classifier(output_dim=1)
+    hue_reg_noisy.load_state_dict(torch.load(args.noisy_hue_regressor_name, map_location=device))
+    hue_reg_noisy.to(device)
+    hue_reg_noisy.eval()
 
     tf = transforms.Compose([transforms.ToTensor()]) # mnist is already normalised 0 to 1
     dataset = MNIST("./data", train=False, download=True, transform=tf)
@@ -121,6 +134,11 @@ def test(args):
     logit_increase_noisy = []
     for i in range(10):
         logit_increase_noisy.append([[] for _ in range(10)])
+    
+    # Metric 4: Gap between hue_cf and target_hue
+    # Ten record per batch (one for each target), then get mean and std for whole
+    hue_gap_clean = []
+    hue_gap_noisy = []
 
     with torch.no_grad():
         for k, (x, c) in enumerate(tqdm(dataloader)):
@@ -180,6 +198,9 @@ def test(args):
                 x_cf_i = ddpm.reconstruct(u, c, size=(3,28,28), device=device, guide_w=2.0, hues=target_hues)
                 # turn x_cf_i into grayscale
 
+                hue_cf_i_clean = hue_reg_clean(x_cf_i)
+                hue_cf_i_noisy = hue_reg_noisy(x_cf_i)
+
                 x_cf_i_gray = 0.299 * x_cf_i[:,0,:,:] + 0.587 * x_cf_i[:,1,:,:] + 0.114 * x_cf_i[:,2,:,:]
                 x_cf_i_gray = (x_cf_i_gray / x_cf_i_gray.max(dim=0)[0]).view(x_cf_i_gray.shape[0],1,x_cf_i_gray.shape[1],-1)
 
@@ -225,31 +246,43 @@ def test(args):
                         second_largest_index_noisy = torch.argsort(logit_cf_i_noisy[l], descending=True)[1] \
                             if c[l] == torch.argmax(logit_cf_i_noisy[l]) else torch.argmax(logit_cf_i_noisy[l])
                         logit_increase_noisy[c[l]][i].append((torch.exp(logit_cf_i_noisy[l][second_largest_index_noisy]) - torch.exp(logit_noisy[l][second_largest_index_noisy])).item())
+                    
+                # Metric 4: ||hue_predicted - target_hue|| L1
+                hue_gap_i_clean = torch.abs(hue_cf_i_clean-target_hues).mean()
+                hue_gap_clean.append(hue_gap_i_clean.item())
+                hue_gap_i_noisy = torch.abs(hue_cf_i_noisy-target_hues).mean()
+                hue_gap_noisy.append(hue_gap_i_noisy.item())
+
             
             # compute current result
             clean_acc = sum([torch.sum(correct_num_per_class_clean[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_clean).item()
             noisy_acc = sum([torch.sum(correct_num_per_class_noisy[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_noisy).item()
             print(f"Batch {k}: Clean Accuracy: {clean_acc}, Noisy Accuracy: {noisy_acc}")
-            clean_ori_decrease = 0
-            noisy_ori_decrease = 0
-            clean_sec_increase = 0
-            noisy_sec_increase = 0
+            clean_ori_decrease = []
+            noisy_ori_decrease = []
+            clean_sec_increase = []
+            noisy_sec_increase = []
             for i in range(10):
                 for j in range(10):
-                    clean_ori_decrease += sum(logit_decrease_clean[i][j])
-                    noisy_ori_decrease += sum(logit_decrease_noisy[i][j])
-                    clean_sec_increase += sum(logit_increase_clean[i][j])
-                    noisy_sec_increase += sum(logit_increase_noisy[i][j])
-            current_num = (k+1) * args.batch_size * 10
-            clean_ori_decrease /= current_num
-            noisy_ori_decrease /= current_num
-            clean_sec_increase /= current_num
-            noisy_sec_increase /= current_num
-            print(f"Batch {k}: Clean Decrease of original class logit: {clean_ori_decrease}")
-            print(f"Batch {k}: Noisy Decrease of original class logit: {noisy_ori_decrease}")
+                    clean_ori_decrease += list(logit_decrease_clean[i][j])
+                    noisy_ori_decrease += list(logit_decrease_noisy[i][j])
+                    clean_sec_increase += list(logit_increase_clean[i][j])
+                    noisy_sec_increase += list(logit_increase_noisy[i][j])
+            clean_ori_decrease = np.array(clean_ori_decrease)
+            noisy_ori_decrease = np.array(noisy_ori_decrease)
+            clean_sec_increase = np.array(clean_sec_increase)
+            noisy_sec_increase = np.array(noisy_sec_increase)
+ 
+            print(f"Batch {k}: Clean Decrease of original class logit: {clean_ori_decrease.mean()} +- {clean_ori_decrease.std()}")
+            print(f"Batch {k}: Noisy Decrease of original class logit: {noisy_ori_decrease.mean()} +- {noisy_ori_decrease.std()}")
 
-            print(f"Batch {k}: Clean Increase of second largest logit: {clean_sec_increase}")
-            print(f"Batch {k}: Noisy Increase of second largest logit: {noisy_sec_increase}")
+            print(f"Batch {k}: Clean Increase of second largest logit: {clean_sec_increase.mean()} +- {clean_sec_increase.std()}")
+            print(f"Batch {k}: Noisy Increase of second largest logit: {noisy_sec_increase.mean()} +- {noisy_sec_increase.std()}")
+
+            hue_gap_clean_np = np.array(hue_gap_clean)
+            hue_gap_noisy_np = np.array(hue_gap_noisy)
+            print(f"Batch {k}: Clean Hue Gap between CF and target: {hue_gap_clean_np.mean()} +- {hue_gap_clean_np.std()}")
+            print(f"Batch {k}: Noisy Hue Gap between CF and target: {hue_gap_noisy_np.mean()} +- {hue_gap_noisy_np.std()}")
 
             # log current batch information
             with open(f"{save_dir}log/log_result.txt", "a") as f:
