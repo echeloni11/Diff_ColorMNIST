@@ -38,3 +38,5 @@ python script2.py --date 240514_1 --cond_mode AdaGN --p_unif 0 --class_type labe
 python script2.py --date 240514_2 --cond_mode AdaGN --p_unif 0 --class_type label --lmda 0.1 --regress_type digit
 
 python script_cvae.py --date 240514_3 --p_unif 0.01
+
+python script2_cvae.py --date 240514_4 --p_unif 0.01 --lmda 10000

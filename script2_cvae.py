@@ -30,7 +30,9 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
+from network import DigitRegressor, HueRegressor
 from cvae import CVAE, plot, loss_function, generate_image
+from dataset import add_hue_confounded
 
 
 def main():
@@ -59,6 +61,7 @@ def train_mnist(args):
     beta = args.beta
     lrate = 1e-4
     lmda = args.lmda
+    reg_type = args.regress_type
     save_model = True
     save_dir = f'./experiments/{args.date}/'
 
@@ -121,12 +124,13 @@ def train_mnist(args):
 
             x, hues = add_hue_confounded(x, c, p_unif)
 
-            optim.zero_grad()
+
             x = x.to(device)    # batch, 3, 28, 28
             c = c.to(device)    # batch
             hues = hues.to(device) if hues is not None else None
             
-            hiddenvec = cvae.get_hiddenvec(x)
+            hidden_vec = cvae.get_hiddenvec(x)
+            hidden_vec = hidden_vec.view(hidden_vec.shape[0], hidden_vec.shape[1], 1, 1)
             if reg_type == 'hue':
                 optim_g.zero_grad()
                 hue_pred_g = hue_reg_g(hidden_vec, c)
@@ -144,6 +148,7 @@ def train_mnist(args):
             
             loss_g_first = loss_g.detach().clone()
 
+            optim_other.zero_grad()
             pred, mu, logvar = cvae(x, c, hues)
             recon_loss, kld = loss_function(x, pred, mu, logvar)
             loss_cvae = recon_loss + beta * kld
@@ -182,7 +187,7 @@ def train_mnist(args):
                 # kld_loss_ema = 0.95 * kld_loss_ema + 0.05 * kld.item()
 
             # Note That here the recon loss and kld loss shown are not ema (unlike in script_cvae.py)!!!
-            pbar.set_description(f"loss: {total_loss_ema:.4f} g: {loss_g.item():.4f} h: {loss_h.item():.4f} cvae: {loss_cvae.item()} recon loss: {reconstruction_loss.item():.4f} kld loss: {kld_loss.item():.4f}")
+            pbar.set_description(f"loss: {total_loss_ema:.4f} g: {loss_g.item():.4f} h: {loss_h.item():.4f} cvae: {loss_cvae.item()} recon loss: {recon_loss.item():.4f} kld loss: {kld.item():.4f}")
         
         # test and generate sample image
         cvae.eval()
