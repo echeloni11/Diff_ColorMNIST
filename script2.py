@@ -42,7 +42,7 @@ def main():
     parser.add_argument('--classifier_name', type=str, choices=[None,'0','0.01','0.05','0.1','1'], default=None, help='Classifier name for classified dataset')
     parser.add_argument('--class_type', type=str, choices=['label', 'logit'], default='label', help='Type of class encoding')
     parser.add_argument('--lmda', type=float, help='strength of CIL')
-    parser.add_argument('--regress_type', type=str, choices=['digit','hue','both'], default='hue',help='use what regressor for CIL')
+    parser.add_argument('--regress_type', type=str, choices=['digit','hue','both'], default='digit',help='use what regressor for CIL')
     args = parser.parse_args()
 
     train_mnist(args)
