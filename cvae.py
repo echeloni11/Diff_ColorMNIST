@@ -76,8 +76,8 @@ class UnetUp(nn.Module):
         ]
         self.model = nn.Sequential(*layers)
 
-    def forward(self, x, skip):
-        x = torch.cat((x, skip), 1)
+    def forward(self, x):
+        # x = torch.cat((x, skip), 1)
         x = self.model(x)
         return x
 
@@ -102,10 +102,13 @@ class EmbedFC(nn.Module):
         return self.model(x)
 
 class CVAE(nn.Module):
-    def __init__(self,n_feat=256,latent_size=32,num_classes=10):
+    def __init__(self, in_channels=3, n_feat=256, latent_size=32, num_classes=10, device="cuda"):
         super(CVAE,self).__init__()
+        self.in_channels = in_channels
+        self.n_feat = n_feat
         self.latent_size = latent_size
         self.num_classes = num_classes
+        self.device = device
 
         # For encode
         # self.conv1 = nn.Conv2d(2, 16, kernel_size=5, stride=2)
@@ -129,8 +132,8 @@ class CVAE(nn.Module):
         # self.conv5 = nn.ConvTranspose2d(1, 1, kernel_size=4)
 
         self.linear = nn.Linear(self.latent_size, 2 * n_feat)
-        self.contextembed1 = EmbedFC(n_classes, 2*n_feat)
-        self.contextembed2 = EmbedFC(n_classes, 1*n_feat)
+        self.contextembed1 = EmbedFC(num_classes, 2*n_feat)
+        self.contextembed2 = EmbedFC(num_classes, 1*n_feat)
         self.hueembed1 = EmbedFC(1, 2*n_feat)
         self.hueembed2 = EmbedFC(1, 1*n_feat)
 
@@ -141,10 +144,10 @@ class CVAE(nn.Module):
             nn.ReLU(),
         )
 
-        self.up1 = UnetUp(4 * n_feat, n_feat)
-        self.up2 = UnetUp(2 * n_feat, n_feat)
+        self.up1 = UnetUp(2 * n_feat, n_feat)
+        self.up2 = UnetUp(n_feat, n_feat)
         self.out = nn.Sequential(
-            nn.Conv2d(2 * n_feat, n_feat, 3, 1, 1),
+            nn.Conv2d(n_feat, n_feat, 3, 1, 1),
             nn.GroupNorm(8, n_feat),
             nn.ReLU(),
             nn.Conv2d(n_feat, self.in_channels, 3, 1, 1),
@@ -158,20 +161,20 @@ class CVAE(nn.Module):
         x = self.init_conv(x)
         down1 = self.down1(x)
         down2 = self.down2(down1)
-        hiddenvec = self.to_vec(down2)
+        hiddenvec = self.to_vec(down2).view(x.shape[0], -1)
         mu = self.mu(hiddenvec)
         logvar = self.logvar(hiddenvec)
         return mu, logvar, down1, down2
     
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5*logvar)
-        eps = torch.randn_like(std).to(device)
+        eps = torch.randn_like(std).to(self.device)
         return eps*std + mu
     
     # def unFlatten(self, x):
     #     return x.reshape((x.shape[0], 32, 4, 4))
 
-    def decoder(self, latent, down1, down2, c, hue):
+    def decoder(self, latent, c, hue):
         # t = F.relu(self.linear2(z))
         # t = F.relu(self.linear3(t))
         # t = self.unFlatten(t)
@@ -183,7 +186,7 @@ class CVAE(nn.Module):
         # convert context to one hot embedding
         # [256] -> [256,10]
         if c.dim() == 1:
-            c = nn.functional.one_hot(c, num_classes=self.n_classes).type(torch.float)
+            c = nn.functional.one_hot(c, num_classes=self.num_classes).type(torch.float)
         
         # embed context, time step
         cemb1 = self.contextembed1(c).view(-1, self.n_feat * 2, 1, 1)
@@ -192,13 +195,14 @@ class CVAE(nn.Module):
         hemb2 = self.hueembed2(hue).view(-1, self.n_feat, 1, 1)
 
         latent = self.linear(latent)  # [batch, latent_size] -> [batch, 2*n_feat]
+        latent = latent.view(latent.shape[0], latent.shape[1], 1, 1)
         up1 = self.up0(latent)           # [batch, 2*n_feat] -> [batch, 2*n_feat, 7, 7]
         # up2 = self.up1(up1, down2) # if want to avoid add and multiply embeddings
 
-        up2 = self.up1(cemb1*up1+ hemb1, down2)  # add and multiply embeddings
-        up3 = self.up2(cemb2*up2+ hemb2, down1)
+        up2 = self.up1(cemb1*up1+ hemb1)  # add and multiply embeddings
+        up3 = self.up2(cemb2*up2+ hemb2)
                 
-        out = self.out(torch.cat((up3, x), 1))
+        out = self.out(up3)
         return out
 
     def forward(self, x, c, hue):
@@ -207,7 +211,7 @@ class CVAE(nn.Module):
 
         # Class and hue conditioning
         # z = torch.cat((z, y.float()), dim=1)
-        pred = self.decoder(z, down1, down2, c, hue)
+        pred = self.decoder(z, c, hue)
         return pred, mu, logvar
 
 
@@ -232,14 +236,10 @@ def loss_function(x, pred, mu, logvar):
 
     return recon_loss, kld
 
-def generate_image(epoch,z, y, model):
+def generate_image(epoch, z, y, model, device="cuda"):
     with torch.no_grad():
-        label = np.zeros((y.shape[0], 10))
-        label[np.arange(z.shape[0]), y] = 1
-        label = torch.tensor(label)
-
-        pred = model.decoder(torch.cat((z.to(device),label.float().to(device)), dim=1))
-        plot(epoch, pred.cpu().data.numpy(), y.cpu().data.numpy(),name='Eval_')
-        print("data Plotted")
+        hue = (y+0.5) * 0.1 % 1.0
+        pred = model.decoder(z, y, hue)
+    return pred
 
     

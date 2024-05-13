@@ -31,7 +31,7 @@ import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
 from cvae import CVAE, plot, loss_function, generate_image
-
+from dataset import add_hue_confounded
 
 def main():
     parser = argparse.ArgumentParser(description='Train a model on MNIST with configurable parameters.')
@@ -67,7 +67,7 @@ def train_mnist(args):
     os.makedirs(save_dir + "gif", exist_ok=True)
     os.makedirs(save_dir + "model", exist_ok=True)
 
-    cvae = CVAE(n_feat, latent_size, n_classes).to(device)
+    cvae = CVAE(3, n_feat, latent_size, n_classes, device=device).to(device)
     optim = torch.optim.AdamW(cvae.parameters(), lr=lrate)
 
 
@@ -75,10 +75,10 @@ def train_mnist(args):
     # ddpm.load_state_dict(torch.load("./data/diffusion_outputs/ddpm_unet01_mnist_9.pth"))
 
     tf = transforms.Compose([transforms.ToTensor()]) # mnist is already normalised 0 to 1
-    if classifier_name is None:
-        dataset = MNIST("./data", train=True, download=True, transform=tf)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
-
+    dataset = MNIST("./data", train=True, download=True, transform=tf)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
+    testset = MNIST("./data", train=False, download=True, transform=tf)
+    testloader = DataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=5)
 
     for ep in range(n_epoch):
         print(f'epoch {ep}')
@@ -86,18 +86,16 @@ def train_mnist(args):
 
         # linear lrate decay
         optim.param_groups[0]['lr'] = lrate*(1-ep/n_epoch)
-        if classifier_name is not None:
-            pbar = tqdm(range(60000//batch_size))
-        else:
-            pbar = tqdm(dataloader)
+
+        pbar = tqdm(dataloader)
         total_loss_ema = None
         reconstruction_loss_ema = None
         kld_loss_ema = None
-        for val in pbar:
+        for i, val in enumerate(pbar):
             x, c = val
             hues = None
-            if mnist_color:
-                x, hues = add_hue_confounded(x, c, p_unif)
+
+            x, hues = add_hue_confounded(x, c, p_unif)
 
             optim.zero_grad()
             x = x.to(device)    # batch, 3, 28, 28
@@ -109,17 +107,14 @@ def train_mnist(args):
             loss.backward()
             optim.step()
 
-            total_loss += loss.cpu().data.numpy()*x.shape[0]
-            reconstruction_loss += recon_loss.cpu().data.numpy()*x.shape[0]
-            kld_loss += kld.cpu().data.numpy()*x.shape[0]
-            if i == 0:
-                print("Gradients")
-                for name,param in model.named_parameters():
-                    if "bias" in name:
-                        print(name,param.grad[0],end=" ")
-                    else:
-                        print(name,param.grad[0,0],end=" ")
-                    print()
+            # if i == 0:
+            #     print("Gradients")
+            #     for name,param in cvae.named_parameters():
+            #         if "bias" in name:
+            #             print(name,param.grad[0],end=" ")
+            #         else:
+            #             print(name,param.grad[0,0],end=" ")
+            #         print()
             if total_loss_ema is None:
                 total_loss_ema = loss.item()
                 reconstruction_loss_ema = recon_loss.item()
@@ -134,10 +129,14 @@ def train_mnist(args):
         # test and generate sample image
         cvae.eval()
         with torch.no_grad():
-            for i,(x,y) in enumerate(test_loader):
+            total_loss = 0
+            reconstruction_loss = 0
+            kld_loss = 0
+            for i,(x,c) in enumerate(testloader):
                 x, hues = add_hue_confounded(x, c, p_unif)
                 x = x.to(device)
                 c = c.to(device)
+                hues = hues.to(device)
                 pred, mu, logvar = cvae(x, c, hues)
                 recon_loss, kld = loss_function(x,pred, mu, logvar)
                 loss = recon_loss + kld
@@ -149,9 +148,9 @@ def train_mnist(args):
                 #     # print("gr:", x[0,0,:5,:5])
                 #     # print("pred:", pred[0,0,:5,:5])
                 #     plot(epoch, pred.cpu().data.numpy(), y.cpu().data.numpy())
-            reconstruction_loss /= len(test_loader.dataset)
-            kld_loss /= len(test_loader.dataset)
-            total_loss /= len(test_loader.dataset)
+            reconstruction_loss /= len(testloader.dataset)
+            kld_loss /= len(testloader.dataset)
+            total_loss /= len(testloader.dataset)
             print(f"test: total loss: {total_loss:.4f} recon loss: {reconstruction_loss:.4f} kld loss: {kld_loss:.4f}")
 
         
@@ -159,9 +158,9 @@ def train_mnist(args):
         # followed by real images (bottom rows)
             n_sample = 4*n_classes
             if ep%5==0 or ep == int(n_epoch-1):
-                y = torch.arange(n_classes).repeat(n_sample//n_classes)
+                y = torch.arange(n_classes).repeat(n_sample//n_classes).to(device)
                 z = torch.randn(n_sample, latent_size).to(device)
-                x_gen = generate_image(ep, z, y, cvae)
+                x_gen = generate_image(ep, z, y, cvae, device=device)
 
                 # append some real images at bottom, order by class also
                 x_real = torch.Tensor(x_gen.shape).to(device)
