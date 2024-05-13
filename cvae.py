@@ -153,6 +153,13 @@ class CVAE(nn.Module):
             nn.Conv2d(n_feat, self.in_channels, 3, 1, 1),
         )
 
+    def get_hiddenvec(self, x):
+        x = self.init_conv(x)
+        down1 = self.down1(x)
+        down2 = self.down2(down1)
+        hiddenvec = self.to_vec(down2).view(x.shape[0], -1)
+        return hiddenvec
+        
     def encoder(self,x):
 
         # y = torch.ones(x.shape).to(device)*y
