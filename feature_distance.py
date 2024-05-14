@@ -39,7 +39,7 @@ def main():
     parser.add_argument('--model_name', type=str, help='Path to the model')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--batch_num', type=int, default=100)
-    parser.add_argument('--plot_digit', type=int, default=None, help='if set, only plot this digit in PCA')
+    # parser.add_argument('--plot_digit', type=int, default=None, help='if set, only plot this digit in PCA')
     args = parser.parse_args()
 
     calculate_feature_distance(args)
@@ -52,7 +52,7 @@ def calculate_feature_distance(args):
     save_freq = args.batch_num // 20
     # p_unif = args.p_unif
     total_batch = args.batch_num
-    plot_digit = args.plot_digit
+    # plot_digit = args.plot_digit
 
     save_dir = f'./test_experiments/{args.date}/'
 
@@ -110,16 +110,27 @@ def calculate_feature_distance(args):
     pca = PCA(n_components=2)
     features = [feature.view(-1).detach().cpu().numpy() for _, _, feature in extracted_features]
     pca_features = pca.fit_transform(features)
+    for plot_digit in range(10):
+        fig, ax = plt.subplots()
+        for i, (digit, hue, _) in enumerate(extracted_features):
+            # use scatter, set each point color according to hue and shape according to digit
+            # if plot_digit is not None:
+            if digit != plot_digit:
+                continue
+            color = plt.cm.viridis(hue)
+            ax.scatter(pca_features[i, 0], pca_features[i, 1], c=color, marker=digit)
+
+        # save the plot
+        plt.savefig(os.path.join(save_dir, f"image/pca_plot_{plot_digit}.png"))
+    
     fig, ax = plt.subplots()
     for i, (digit, hue, _) in enumerate(extracted_features):
         # use scatter, set each point color according to hue and shape according to digit
-        if plot_digit is not None:
-            if digit != plot_digit:
-                continue
+        # if plot_digit is not None:
         color = plt.cm.viridis(hue)
         ax.scatter(pca_features[i, 0], pca_features[i, 1], c=color, marker=digit)
 
-    # save the plot
+        # save the plot
     plt.savefig(os.path.join(save_dir, "image/pca_plot.png"))
 
 if __name__ == "__main__":
