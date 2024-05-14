@@ -61,6 +61,7 @@ python script.py --date 240514_11 --cond_mode AdaGN --p_unif 0 --class_type labe
 python script2_cvae.py --date 240514_12 --p_unif 0 --lmda 500 
 
 TODO: (add LPIPS; test naive p_unif=0)
+(remove lpips)
 (cil p_unif=0)
 python test_script.py --date 240514_13 --model_name ./experiments/240514_2/model/model_29.pth  --dataset_type ID --batch_size 32 --batch_num 50 > ./test_experiments/240514_13/log/stdout.log
 
@@ -69,3 +70,17 @@ python test_script.py --date 240514_14 --model_name ./experiments/240514_11/mode
 
 
 TODO: (cosine similarity between extracted features of different color)
+
+(cil, p_unif=0.01)
+python feature_distance.py --date 250514_15 --model_name ./experiments/240511_5/model/model_29.pth
+(naive, p_unif=0.01)
+python feature_distance.py --date 250514_16 --model_name ./diff_to_download/240504_2_model_29.pth
+(cil, p_unif=0)
+python feature_distance.py --date 250514_17 --model_name ./experiments/240514_2/model/model_29.pth
+(naive, p_unif=0)
+python feature_distance.py --date 250514_18 --model_name ./experiments/240514_11/model/model_29.pth
+
+(cil, p_unif=0.01, 只plot一个形状)
+python feature_distance.py --date 250514_19 --model_name ./experiments/240511_5/model/model_29.pth --plot_digit 2
+(naive, p_unif=0.01, 只plot一个形状)
+python feature_distance.py --date 250514_20 --model_name ./diff_to_download/240504_2_model_29.pth --plot_digit 2
