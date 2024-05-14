@@ -41,7 +41,6 @@ python script_cvae.py --date 240514_3 --p_unif 0.01
 
 python script2_cvae.py --date 240514_4 --p_unif 0.01 --lmda 10000
 
-TODO:
 
 python script_cvae.py --date 240514_5 --p_unif 0 (on _2)
 
@@ -56,3 +55,17 @@ python test_script.py --date 240514_8 --model_name ./diff_to_download/240504_1_m
 python test_script.py --date 240514_9 --model_name ./experiments/240514_2/model/model_29.pth  --dataset_type OOD --batch_size 32 --batch_num 50 > ./test_experiments/240514_9/log/stdout.log
 
 python test_script.py --date 240514_10 --model_name ./diff_to_download/240504_1_model_29.pth  --dataset_type OOD --batch_size 32 --batch_num 50 > ./test_experiments/240514_10/log/stdout.log
+
+python script.py --date 240514_11 --cond_mode AdaGN --p_unif 0 --class_type label
+
+python script2_cvae.py --date 240514_12 --p_unif 0 --lmda 500 
+
+TODO: (add LPIPS; test naive p_unif=0)
+(cil p_unif=0)
+python test_script.py --date 240514_13 --model_name ./experiments/240514_2/model/model_29.pth  --dataset_type ID --batch_size 32 --batch_num 50 > ./test_experiments/240514_13/log/stdout.log
+
+(naive p_unif=0)
+python test_script.py --date 240514_14 --model_name ./experiments/240514_11/model/model_29.pth  --dataset_type ID --batch_size 32 --batch_num 50 > ./test_experiments/240514_14/log/stdout.log
+
+
+TODO: (cosine similarity between extracted features of different color)

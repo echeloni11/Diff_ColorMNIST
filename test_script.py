@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 import cv2
 import numpy as np
+import lpips
 
 from matplotlib.colors import hsv_to_rgb
 
@@ -140,6 +141,9 @@ def test(args):
     hue_gap_clean = []
     hue_gap_noisy = []
 
+    # Metric 5: LPIPS between x_ori and x_cf_gray
+    lpips_list = []
+
     with torch.no_grad():
         for k, (x, c) in enumerate(tqdm(dataloader)):
             if k >= args.batch_num:
@@ -170,12 +174,13 @@ def test(args):
                 grid = make_grid(x*-1 + 1, nrow=8)
                 save_image(grid, save_dir + f"image/x_ori_batch{k}.png")
 
+            x_ori = x.detach().clone()
 
             if args.dataset_type == "ID":
                 x, hues = add_hue_confounded(x, c, p_unif)
             elif args.dataset_type == "OOD":
                 x, hues = add_hue_confounded(x, (c+5)%10, p_unif)
-
+            
             # total_num_per_class += torch.bincount(c, minlength=10)
             for l in range(len(c)):
                 total_num_per_class[c[l]] += 1
@@ -253,7 +258,31 @@ def test(args):
                 hue_gap_i_noisy = torch.abs(hue_cf_i_noisy-target_hues).mean()
                 hue_gap_noisy.append(hue_gap_i_noisy.item())
 
+                # Metric 5: LPIPS between original x and x_cf_gray
+                # Remember to repeat the gray image into RGB 
+                # AND to normalize to [-1, 1]
+                try:
+                    lpips_alex = lpips.LPIPS(net='alex', verbose=False) # best forward scores
+                    lpips_alex.to(device)
+                    x_ori = (x_ori - x_ori.min(dim=0)[0])/(x_ori.max(dim=0)[0] - x_ori.min(dim=0)[0])
+                    x_ori = x_ori * 2 - 1
+                    if x_ori.shape[1] == 1:
+                        x_ori = x_ori.repeat(1,3,1,1)
+
+                    x_cf_i_gray = (x_cf_i_gray - x_cf_i_gray.min(dim=0)[0])/(x_cf_i_gray.max(dim=0)[0] - x_cf_i_gray.min(dim=0)[0])
+                    x_cf_i_gray = x_cf_i_gray * 2 - 1
+                    x_cf_i_gray = x_cf_i_gray.repeat(1,3,1,1)
+
+                    # upsample to Nx3x128x128
+                    x_ori_upsampled = F.interpolate(x_ori, size=(128,128), mode="nearest")
+                    x_cf_i_gray_upsampled = F.interpolate(x_cf_i_gray, size=(128,128), mode="nearest")
             
+                    lpips_loss = lpips_alex(x_ori_upsampled.to(device), x_cf_i_gray_upsampled.to(device))
+                    lpips_list.append(torch.mean(lpips_loss).item())
+                except RuntimeError as e:
+                    print(f"x_ori {x_ori.shape} x_cf_i_gray {x_cf_i_gray.shape}")
+                    raise e
+                
             # compute current result
             clean_acc = sum([torch.sum(correct_num_per_class_clean[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_clean).item()
             noisy_acc = sum([torch.sum(correct_num_per_class_noisy[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_noisy).item()
@@ -283,6 +312,10 @@ def test(args):
             hue_gap_noisy_np = np.array(hue_gap_noisy)
             print(f"Batch {k}: Clean Hue Gap between CF and target: {hue_gap_clean_np.mean()} +- {hue_gap_clean_np.std()}")
             print(f"Batch {k}: Noisy Hue Gap between CF and target: {hue_gap_noisy_np.mean()} +- {hue_gap_noisy_np.std()}")
+
+            lpips_np = np.array(lpips_list)
+            print(f"Batch {k}: LPIPS: {lpips_np.mean()} +- {lpips_np.std()}")
+
 
             # log current batch information
             with open(f"{save_dir}log/log_result.txt", "a") as f:
