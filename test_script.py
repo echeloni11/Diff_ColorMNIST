@@ -179,7 +179,8 @@ def test(args):
             if args.dataset_type == "ID":
                 x, hues = add_hue_confounded(x, c, p_unif)
             elif args.dataset_type == "OOD":
-                x, hues = add_hue_confounded(x, (c+5)%10, p_unif)
+                # x, hues = add_hue_confounded(x, (c+5)%10, p_unif)
+                x = x.repeat(1,3,1,1)
             
             # total_num_per_class += torch.bincount(c, minlength=10)
             for l in range(len(c)):
@@ -257,6 +258,9 @@ def test(args):
                 hue_gap_clean.append(hue_gap_i_clean.item())
                 hue_gap_i_noisy = torch.abs(hue_cf_i_noisy-target_hues).mean()
                 hue_gap_noisy.append(hue_gap_i_noisy.item())
+
+                # Metric 5: Success Rate 
+
 
                 # # Metric 5: LPIPS between original x and x_cf_gray
                 # # Remember to repeat the gray image into RGB 
