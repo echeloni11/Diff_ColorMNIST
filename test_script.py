@@ -141,7 +141,20 @@ def test(args):
     hue_gap_clean = []
     hue_gap_noisy = []
 
-    # Metric 5: LPIPS between x_ori and x_cf_gray
+    # Metric 5: Success Rate
+    success_per_class_clean = []  # success_per_class_clean[i][j] is the number of class i do(hue=j) and remain class i with hue gap < 0.1
+    success_per_class_clean_restrict = []  # success_per_class_clean[i][j] is the number of class i do(hue=j) and remain class i with hue gap < 0.05
+    for i in range(10):
+        success_per_class_clean.append(torch.zeros(10, device=device))
+        success_per_class_clean_restrict.append(torch.zeros(10, device=device))
+    success_per_class_noisy = []  # success_per_class_noisy[i][j] is the number of class i do(hue=j) and remain class i with hue gap < 0.1
+    success_per_class_noisy_restrict = []  # success_per_class_noisy[i][j] is the number of class i do(hue=j) and remain class i with hue gap < 0.05
+    for i in range(10):
+        success_per_class_noisy.append(torch.zeros(10, device=device))
+        success_per_class_noisy_restrict.append(torch.zeros(10, device=device))
+
+
+    # # Metric 5: LPIPS between x_ori and x_cf_gray
     # lpips_list = []
 
     with torch.no_grad():
@@ -254,12 +267,21 @@ def test(args):
                         logit_increase_noisy[c[l]][i].append((torch.exp(logit_cf_i_noisy[l][second_largest_index_noisy]) - torch.exp(logit_noisy[l][second_largest_index_noisy])).item())
                     
                 # Metric 4: ||hue_predicted - target_hue|| L1
-                hue_gap_i_clean = torch.abs(hue_cf_i_clean-target_hues).mean()
-                hue_gap_clean.append(hue_gap_i_clean.item())
-                hue_gap_i_noisy = torch.abs(hue_cf_i_noisy-target_hues).mean()
-                hue_gap_noisy.append(hue_gap_i_noisy.item())
+                hue_gap_i_clean = torch.abs(hue_cf_i_clean-target_hues)
+                hue_gap_clean.append(hue_gap_i_clean.mean().item())
+                hue_gap_i_noisy = torch.abs(hue_cf_i_noisy-target_hues)
+                hue_gap_noisy.append(hue_gap_i_noisy.mean().item())
 
                 # Metric 5: Success Rate 
+                for l in range(len(c)):
+                    if correct_cf_i_clean[l] and not error_clean[l] and hue_gap_i_clean[l] < 0.1:
+                        success_per_class_clean[c[l]][i] += 1
+                    if correct_cf_i_clean[l] and not error_clean[l] and hue_gap_i_clean[l] < 0.05:
+                        success_per_class_clean_restrict[c[l]][i] += 1
+                    if correct_cf_i_noisy[l] and not error_noisy[l] and hue_gap_i_clean[l] < 0.1:
+                        success_per_class_noisy[c[l]][i] += 1
+                    if correct_cf_i_noisy[l] and not error_noisy[l] and hue_gap_i_clean[l] < 0.05:
+                        success_per_class_noisy_restrict[c[l]][i] += 1
 
 
                 # # Metric 5: LPIPS between original x and x_cf_gray
@@ -305,6 +327,10 @@ def test(args):
             noisy_ori_decrease = np.array(noisy_ori_decrease)
             clean_sec_increase = np.array(clean_sec_increase)
             noisy_sec_increase = np.array(noisy_sec_increase)
+            clean_success_rate = sum([torch.sum(success_per_class_clean[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_clean).item
+            clean_success_rate_restrict = sum([torch.sum(success_per_class_clean_restrict[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_clean).item
+            noisy_success_rate = sum([torch.sum(success_per_class_noisy[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_noisy).item
+            noisy_success_rate_restrict = sum([torch.sum(success_per_class_noisy_restrict[i]).item() for i in range(10)])/10 / torch.sum(total_num_per_class_noisy).item
  
             print(f"Batch {k}: Clean Decrease of original class logit: {clean_ori_decrease.mean()} +- {clean_ori_decrease.std()}")
             print(f"Batch {k}: Noisy Decrease of original class logit: {noisy_ori_decrease.mean()} +- {noisy_ori_decrease.std()}")
@@ -316,6 +342,9 @@ def test(args):
             hue_gap_noisy_np = np.array(hue_gap_noisy)
             print(f"Batch {k}: Clean Hue Gap between CF and target: {hue_gap_clean_np.mean()} +- {hue_gap_clean_np.std()}")
             print(f"Batch {k}: Noisy Hue Gap between CF and target: {hue_gap_noisy_np.mean()} +- {hue_gap_noisy_np.std()}")
+
+            print(f"Batch {k}: Clean Success Rate: {clean_success_rate}, Clean Success Rate (restrict): {clean_success_rate_restrict}")
+            print(f"Batch {k}: Noisy Success Rate: {noisy_success_rate}, Noisy Success Rate (restrict): {noisy_success_rate_restrict}")
 
             # lpips_np = np.array(lpips_list)
             # print(f"Batch {k}: LPIPS: {lpips_np.mean()} +- {lpips_np.std()}")
@@ -361,6 +390,31 @@ def test(args):
                             f.write(f"{sum(logit_decrease_noisy[i][j]) / len(logit_decrease_noisy[i][j]):.4f} ")
                     f.write("\n")
                 f.write("\n")
+
+                # Metric 5: Success Rate
+                f.write("Clean Success Rate\n")
+                f.write(f"origin            total_num               Success Rate\n")
+                for i in range(10):
+                    f.write(f"{i}                 {total_num_per_class_clean[i]} ({total_num_per_class[i]})    {(success_per_class_clean[i] / total_num_per_class[i]).detach().cpu().numpy().tolist()}\n")
+                f.write("\n")
+                f.write("Clean Success Rate (restrict)\n")
+                f.write(f"origin            total_num               Success Rate\n")
+                for i in range(10):
+                    f.write(f"{i}                 {total_num_per_class_clean[i]} ({total_num_per_class[i]})    {(success_per_class_clean_restrict[i] / total_num_per_class[i]).detach().cpu().numpy().tolist()}\n")
+                f.write("\n")
+                f.write("Noisy Success Rate\n")
+                f.write(f"origin            total_num               Success Rate\n")
+                for i in range(10):
+                    f.write(f"{i}                 {total_num_per_class_noisy[i]} ({total_num_per_class[i]})    {(success_per_class_noisy[i] / total_num_per_class[i]).detach().cpu().numpy().tolist()}\n")
+                f.write("\n")
+                f.write("Noisy Success Rate (restrict)\n")
+                f.write(f"origin            total_num               Success Rate\n")
+                for i in range(10):
+                    f.write(f"{i}                 {total_num_per_class_noisy[i]} ({total_num_per_class[i]})    {(success_per_class_noisy_restrict[i] / total_num_per_class[i]).detach().cpu().numpy().tolist()}\n")
+                f.write("\n")
+                f.write(" ------------------------------------------------------\n")
+
+
 
             # with open(f"{save_dir}log/log_detail.txt", "a") as f:
             #     f.write(f"total_num_per_class: {total_num_per_class.detach().cpu().numpy().tolist()}\n")
